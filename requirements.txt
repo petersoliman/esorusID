@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-numpy
+numpy==1.24.4
 Pillow
 open_clip_torch
 faiss-cpu
