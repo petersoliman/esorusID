@@ -2,3 +2,8 @@ fastapi
 uvicorn
 numpy
 Pillow
+open_clip_torch
+faiss-cpu
+opencv-python
+matplotlib
+torch
