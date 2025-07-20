@@ -14,36 +14,48 @@ templates = Jinja2Templates(directory="templates")
 async def index():
     return templates.TemplateResponse("index.html", {"request": {}})
 
-@app.post("/search", response_class=HTMLResponse)
+@app.post("/search")
 async def search(request: Request, file: UploadFile = File(...)):
+    print("🟢 POST /search called")
+    print(f"🟢 Received file: {file.filename}")
+
     try:
-        print(f"📤 Received file: {file.filename}")
+        upload_folder = "static/uploads"
+        os.makedirs(upload_folder, exist_ok=True)
+        file_location = os.path.join(upload_folder, file.filename)
 
-        upload_dir = "static/uploads"
-        os.makedirs(upload_dir, exist_ok=True)
-
-        file_path = os.path.join(upload_dir, file.filename)
-
-        with open(file_path, "wb") as buffer:
+        with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        print(f"🟢 Saved file to {file_location}")
 
-        uploaded_image_url = f"/static/uploads/{file.filename}"
-        print(f"✅ File saved at {uploaded_image_url}")
-
-        # Dummy recommendations
+        # Now prepare your recommended images list (dummy for now)
         recommended_images = [
-            "/static/images/18868_0.jpg",
-            "/static/images/18868_1.jpg",
-            "/static/images/18869_0.jpg"
+            "/static/images/recommend1.jpg",
+            "/static/images/recommend2.jpg",
+            "/static/images/recommend3.jpg"
         ]
 
+        print("🟢 Rendering result.html")
         return templates.TemplateResponse("result.html", {
             "request": request,
-            "uploaded_image": uploaded_image_url,
+            "uploaded_image": f"/static/uploads/{file.filename}",
             "recommended_images": recommended_images
         })
-
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return HTMLResponse(content=f"<h1>Server Error: {e}</h1>", status_code=500)
+        print(f"❌ Error in /search: {e}")
+        return HTMLResponse(f"<h1>Error: {e}</h1>", status_code=500)
+
+@app.get("/test")
+async def test(request: Request):
+    print("🟢 /test called")
+    recommended_images = [
+        "/static/images/recommend1.jpg",
+        "/static/images/recommend2.jpg",
+        "/static/images/recommend3.jpg"
+    ]
+    uploaded_image = "/static/images/sample_upload.jpg"  # Put a sample image here manually
+    return templates.TemplateResponse("result.html", {
+        "request": request,
+        "uploaded_image": uploaded_image,
+        "recommended_images": recommended_images
+    })
