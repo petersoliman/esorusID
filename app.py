@@ -1,88 +1,57 @@
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, File, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-import uvicorn
-from PIL import Image
-import open_clip
-import torch
-import faiss
-import numpy as np
-import io
+from fastapi.templating import Jinja2Templates
 import os
+import shutil
 
-print("✅ Starting app setup...")
+print("🚀 app.py starting...")
 
 app = FastAPI()
+print("📦 FastAPI instance created.")
 
-# Serve static files (frontend)
-print("✅ Mounting static directory...")
+# Static folder for assets (CSS, JS, uploads)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+print("📂 Mounted static directory.")
 
-# Load OpenCLIP model
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"✅ Using device: {device}")
-print("✅ Loading OpenCLIP model...")
-model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai')
-model.to(device).eval()
-print("✅ Model loaded and ready.")
-
-# Embed static images
-IMAGE_DIR = "static/images"
-print(f"✅ Reading images from: {IMAGE_DIR}")
-IMAGE_PATHS = [os.path.join(IMAGE_DIR, f) for f in os.listdir(IMAGE_DIR) if f.endswith(('jpg', 'png'))]
-print(f"✅ Found {len(IMAGE_PATHS)} image(s).")
-
-image_embeddings = []
-
-with torch.no_grad():
-    for path in IMAGE_PATHS:
-        print(f"🔍 Processing image: {path}")
-        img = preprocess(Image.open(path).convert("RGB")).unsqueeze(0).to(device)
-        emb = model.encode_image(img)
-        emb = emb / emb.norm(dim=-1, keepdim=True)
-        image_embeddings.append(emb.cpu().numpy())
-
-image_embeddings = np.vstack(image_embeddings)
-print(f"✅ Image embeddings shape: {image_embeddings.shape}")
-
-# FAISS index setup
-print("✅ Creating FAISS index...")
-d = image_embeddings.shape[1]
-index = faiss.IndexFlatIP(d)
-index.add(image_embeddings)
-print("✅ FAISS index created and populated.")
+# Templates folder
+templates = Jinja2Templates(directory="templates")
+print("🧩 Jinja2 templates set to 'templates/'.")
 
 @app.get("/", response_class=HTMLResponse)
-async def root():
-    print("📥 Received GET / request for homepage.")
-    try:
-        with open("static/index.html") as f:
-            print("✅ index.html found and loaded.")
-            return f.read()
-    except Exception as e:
-        print(f"❌ Error loading index.html: {e}")
-        return HTMLResponse(content="Error loading index.html", status_code=500)
+async def read_index(request: Request):
+    print("📥 GET / - Rendering index.html")
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.post("/search")
-async def search(file: UploadFile = File(...)):
-    print(f"📥 Received POST /search request with file: {file.filename}")
-    try:
-        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
-        image_tensor = preprocess(image).unsqueeze(0).to(device)
+@app.post("/search", response_class=HTMLResponse)
+async def search(request: Request, file: UploadFile = File(...)):
+    print("📤 POST /search - File upload started")
+    print(f"📎 Received file: {file.filename}")
 
-        print("🔍 Encoding uploaded image...")
-        with torch.no_grad():
-            emb = model.encode_image(image_tensor)
-            emb = emb / emb.norm(dim=-1, keepdim=True)
+    # Save the uploaded file
+    upload_folder = "static/uploads"
+    os.makedirs(upload_folder, exist_ok=True)
+    file_path = os.path.join(upload_folder, file.filename)
 
-        query_vector = emb.cpu().numpy().astype("float32")
-        D, I = index.search(query_vector, k=5)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-        print(f"✅ Top 5 matches found: {I[0]}")
-        result_paths = [IMAGE_PATHS[i].replace("static/", "") for i in I[0]]
-        print(f"✅ Result paths: {result_paths}")
+    print(f"✅ File saved to: {file_path}")
 
-        return JSONResponse({"results": result_paths})
-    except Exception as e:
-        print(f"❌ Error during search: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+    # Build the URL to the uploaded image
+    uploaded_image_url = f"/static/uploads/{file.filename}"
+    print(f"🖼️ Uploaded image URL: {uploaded_image_url}")
+
+    # TODO: Replace this block with real recommendation logic
+    recommended_images = os.listdir("static/recommended")
+    recommended_images = sorted(recommended_images)  # Sort alphabetically
+    recommended_image_urls = [f"/static/recommended/{img}" for img in recommended_images]
+
+    print(f"🔍 Recommended images: {recommended_image_urls}")
+
+    # Render result page with uploaded + recommended images
+    return templates.TemplateResponse("result.html", {
+        "request": request,
+        "uploaded_image": uploaded_image_url,
+        "recommended_images": recommended_image_urls
+    })
