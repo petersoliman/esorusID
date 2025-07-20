@@ -1,21 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Uploaded Image Result</title>
-  <style>
-    img { max-width: 300px; margin: 10px; }
-    .container { display: flex; flex-wrap: wrap; gap: 10px; }
-  </style>
+    <title>Results</title>
 </head>
 <body>
-  <h1>Uploaded Image:</h1>
-  <img src="{{ uploaded_image }}" alt="Uploaded Image">
+    <h1>Uploaded Image</h1>
+    <img src="{{ uploaded_image }}" width="300" />
 
-  <h2>Recommended Images:</h2>
-  <div class="container">
-    {% for img in recommended_images %}
-      <img src="{{ img }}" alt="Recommended Image">
+    <h2>Recommended Images</h2>
+    {% for image in recommended_images %}
+        <img src="{{ image }}" width="150" />
     {% endfor %}
-  </div>
 </body>
 </html>
