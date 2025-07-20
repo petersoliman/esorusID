@@ -1,13 +1,11 @@
 fastapi
 uvicorn
-numpy==1.24.4
+torch
+ftfy
+regex
+tqdm
 Pillow
+numpy
 faiss-cpu
-opencv-python
-matplotlib
-python-multipart
 git+https://github.com/openai/CLIP.git
-torch==2.0.1+cpu
-torchvision==0.15.2+cpu
-torchaudio==2.0.2+cpu
--f https://download.pytorch.org/whl/cpu/torch_stable.html
+jinja2
