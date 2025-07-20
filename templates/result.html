@@ -1,15 +1,16 @@
+<!-- templates/result.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Results</title>
+  <title>Search Results</title>
 </head>
 <body>
-    <h1>Uploaded Image</h1>
-    <img src="{{ uploaded_image }}" width="300" />
+  <h1>Uploaded Image</h1>
+  <img src="{{ uploaded_image }}" alt="Uploaded Image" width="300">
 
-    <h2>Recommended Images</h2>
-    {% for image in recommended_images %}
-        <img src="{{ image }}" width="150" />
-    {% endfor %}
+  <h2>Recommended Images</h2>
+  {% for img in recommended_images %}
+    <img src="{{ img }}" alt="Recommended Image" width="200">
+  {% endfor %}
 </body>
 </html>
