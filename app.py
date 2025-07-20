@@ -108,3 +108,8 @@ async def edit_image(filename: str, file: UploadFile = File(...)):
 async def delete_image(filename: str):
     os.remove(os.path.join(RECOMMEND_DIR, filename))
     return RedirectResponse(url="/images", status_code=302)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
