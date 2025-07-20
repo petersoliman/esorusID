@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Edit Image</title>
+</head>
+<body>
+  <h1>Edit Image: {{ filename }}</h1>
+  <img src="{{ url_for('static', path='recommendations/' ~ filename) }}" style="max-width:200px;"><br><br>
+  <form action="/images/edit/{{ filename }}" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">Replace Image</button>
+  </form>
+  <br>
+  <a href="/images">← Back to Image List</a>
+</body>
+</html>

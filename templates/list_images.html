@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Manage Recommendation Images</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    img { max-width: 150px; margin: 10px; border: 1px solid #ccc; }
+    .image-box { display: inline-block; text-align: center; margin: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Recommendation Images</h1>
+  <a href="/images/add">+ Add New Image</a> | <a href="/">← Back to Upload</a>
+  <div>
+    {% for image in images %}
+      <div class="image-box">
+        <img src="{{ url_for('static', path='recommendations/' ~ image) }}"><br>
+        {{ image }}<br>
+        <a href="/images/edit/{{ image }}">Edit</a> |
+        <a href="/images/delete/{{ image }}" onclick="return confirm('Are you sure?')">Delete</a>
+      </div>
+    {% endfor %}
+  </div>
+</body>
+</html>
