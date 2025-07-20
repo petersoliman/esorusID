@@ -1,0 +1,20 @@
+# Ignore uploaded temp files
+static/uploadeds/*
+
+# Ignore all images in recommendations (optional)
+static/recommendations/*
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.pyc
+
+# Ignore environment config
+.env
+*.env
+
+# Ignore virtual environment
+venv/
+env/
+
+# Ignore system-specific files
+.DS_Store
