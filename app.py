@@ -44,7 +44,7 @@ def build_faiss_index():
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "results": None})
 
-@app.post("/", response_class=HTMLResponse)
+@app.post("/search", response_class=HTMLResponse)
 async def upload_and_recommend(request: Request, file: UploadFile = File(...)):
     # Save uploaded image
     os.makedirs(UPLOAD_DIR, exist_ok=True)
