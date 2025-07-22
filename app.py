@@ -12,6 +12,9 @@ from PIL import Image
 import numpy as np
 import open_clip
 from itertools import islice
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 
 app = FastAPI()
@@ -73,8 +76,17 @@ def build_index():
 
 @app.on_event("startup")
 async def startup_event():
-    load_model()
-    build_index()
+    try:
+        logging.info("Loading model...")
+        global model, preprocess
+        load_model()
+        logging.info("Model loaded successfully.")
+
+        logging.info("Indexing recommendation images...")
+        build_index()
+        logging.info("Images indexed successfully.")
+    except Exception as e:
+        logging.exception("Startup failed due to exception:")
 
 
 @app.get("/", response_class=HTMLResponse)
