@@ -1,99 +1,148 @@
-import os
-import shutil
-from fastapi import FastAPI, Request, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, UploadFile, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pathlib import Path
+from shutil import copyfile
+import os
+import uuid
 import torch
-import open_clip
+import faiss
 from PIL import Image
 import numpy as np
-import faiss
+import open_clip
 
-# === CONFIG ===
-RECOMMEND_DIR = "static/recommendations"
-UPLOAD_DIR = "static/uploads"
-TOP_K = 5
-
-# === SETUP ===
 app = FastAPI()
-templates = Jinja2Templates(directory="templates")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
-device = "cpu"
-model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="laion2b_s34b_b79k")
-tokenizer = open_clip.get_tokenizer("ViT-B-32")
+UPLOAD_FOLDER = Path("static/uploads")
+RECOMMEND_FOLDER = Path("static/recommendations")
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+RECOMMEND_FOLDER.mkdir(parents=True, exist_ok=True)
 
+# Global index and image metadata
 index = None
-recommendation_images = []
+image_features = []
+image_filenames = []
+model = None
+preprocess = None
+device = "cpu"
 
-# === UTILS ===
-def extract_features(image_path):
-    image = Image.open(image_path).convert("RGB")
+
+def load_model():
+    global model, preprocess
+    print("Loading model...")
+    model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="laion2b_s34b_b79k")
+    model.eval()
+    model.to(device)
+
+
+def extract_features(image: Image.Image):
     image_tensor = preprocess(image).unsqueeze(0).to(device)
     with torch.no_grad():
-        features = model.encode_image(image_tensor).cpu().numpy()
-    return features / np.linalg.norm(features)
+        features = model.encode_image(image_tensor).squeeze().cpu().numpy()
+    return features.astype("float32")
 
-def build_faiss_index():
-    global index, recommendation_images
-    print("[INFO] Building FAISS index...")
-    image_paths = sorted([f for f in os.listdir(RECOMMEND_DIR) if f.lower().endswith(("jpg", "jpeg", "png"))])
-    vectors = []
-    recommendation_images = []
 
-    for filename in image_paths:
-        path = os.path.join(RECOMMEND_DIR, filename)
+def build_index():
+    global index, image_features, image_filenames
+    print("Building FAISS index from recommendation images...")
+    image_features = []
+    image_filenames = []
+    for image_path in RECOMMEND_FOLDER.glob("*.*"):
         try:
-            vec = extract_features(path)
-            vectors.append(vec)
-            recommendation_images.append(filename)
+            img = Image.open(image_path).convert("RGB")
+            feature = extract_features(img)
+            image_features.append(feature)
+            image_filenames.append(image_path.name)
         except Exception as e:
-            print(f"[ERROR] Failed to process {filename}: {e}")
-
-    if vectors:
-        vectors_np = np.vstack(vectors).astype("float32")
-        index = faiss.IndexFlatL2(vectors_np.shape[1])
-        index.add(vectors_np)
-        print(f"[INFO] FAISS index built with {len(vectors)} images.")
+            print(f"Failed to process {image_path.name}: {e}")
+    if image_features:
+        features_array = np.vstack(image_features)
+        index = faiss.IndexFlatL2(features_array.shape[1])
+        index.add(features_array)
+        print(f"Indexed {len(image_filenames)} images.")
     else:
-        print("[WARNING] No images indexed.")
+        index = None
+        print("No images indexed.")
 
-# === ROUTES ===
+
 @app.on_event("startup")
-def startup_event():
-    build_faiss_index()
+async def startup_event():
+    load_model()
+    build_index()
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+
 @app.post("/search", response_class=HTMLResponse)
-async def search(request: Request, file: UploadFile = File(...)):
-    if not os.path.exists(UPLOAD_DIR):
-        os.makedirs(UPLOAD_DIR)
-    upload_path = os.path.join(UPLOAD_DIR, file.filename)
-    with open(upload_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+async def search(request: Request, file: UploadFile):
+    contents = await file.read()
+    ext = file.filename.split(".")[-1]
+    name = f"{uuid.uuid4()}.{ext}"
+    path = UPLOAD_FOLDER / name
+    with open(path, "wb") as f:
+        f.write(contents)
 
-    print(f"[INFO] Uploaded: {file.filename}")
-    try:
-        query_vec = extract_features(upload_path).astype("float32")
-        D, I = index.search(query_vec, TOP_K)
-        results = [recommendation_images[i] for i in I[0]]
-        print(f"[INFO] Top-{TOP_K} results: {results}")
-    except Exception as e:
-        print(f"[ERROR] Failed to search: {e}")
-        results = []
+    img = Image.open(path).convert("RGB")
+    query_feat = extract_features(img)
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "uploaded": file.filename,
-        "results": results
-    })
+    if index is None or len(image_filenames) == 0:
+        return templates.TemplateResponse("index.html", {"request": request, "uploaded": name, "results": []})
+
+    D, I = index.search(np.expand_dims(query_feat, axis=0), k=5)
+    results = [image_filenames[i] for i in I[0]]
+    return templates.TemplateResponse("index.html", {"request": request, "uploaded": name, "results": results})
+
 
 @app.get("/images", response_class=HTMLResponse)
-async def manage_images(request: Request):
-    images = os.listdir(RECOMMEND_DIR)
-    return templates.TemplateResponse("images.html", {"request": request, "images": images})
+async def list_images(request: Request):
+    images = [f.name for f in RECOMMEND_FOLDER.iterdir() if f.is_file()]
+    return templates.TemplateResponse("list_images.html", {"request": request, "images": images})
+
+
+@app.get("/images/add", response_class=HTMLResponse)
+async def add_image_form(request: Request):
+    return templates.TemplateResponse("add_image.html", {"request": request})
+
+
+@app.post("/images/add")
+async def add_image(request: Request, file: UploadFile):
+    contents = await file.read()
+    ext = file.filename.split(".")[-1]
+    name = f"{uuid.uuid4()}.{ext}"
+    path = RECOMMEND_FOLDER / name
+    with open(path, "wb") as f:
+        f.write(contents)
+    build_index()
+    return RedirectResponse(url="/images", status_code=302)
+
+
+@app.get("/images/edit/{image_name}", response_class=HTMLResponse)
+async def edit_image_form(request: Request, image_name: str):
+    return templates.TemplateResponse("edit_image.html", {"request": request, "image": image_name})
+
+
+@app.post("/images/edit/{image_name}")
+async def edit_image(image_name: str, file: UploadFile):
+    path = RECOMMEND_FOLDER / image_name
+    if path.exists():
+        contents = await file.read()
+        with open(path, "wb") as f:
+            f.write(contents)
+    build_index()
+    return RedirectResponse(url="/images", status_code=302)
+
+
+@app.get("/images/delete/{image_name}")
+async def delete_image(image_name: str):
+    path = RECOMMEND_FOLDER / image_name
+    if path.exists():
+        os.remove(path)
+    build_index()
+    return RedirectResponse(url="/images", status_code=302)
