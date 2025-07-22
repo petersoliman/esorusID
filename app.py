@@ -39,7 +39,15 @@ device = "cpu"
 def load_model():
     global model, preprocess
     print("Loading model...")
-    model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="laion2b_s34b_b79k")
+    try:
+        model, _, preprocess = open_clip.create_model_and_transforms(
+            "ViT-B-32", pretrained="openai"
+        )
+        logging.info("Model loaded successfully.")
+    except Exception as e:
+        logging.exception("Error loading model")
+        raise e  # Make sure it raises so Railway logs the error
+
     model.eval()
     model.to(device)
 
