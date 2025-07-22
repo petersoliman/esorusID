@@ -1,94 +1,99 @@
 import os
-import uuid
-from fastapi import FastAPI, File, UploadFile, Request
-from fastapi.templating import Jinja2Templates
+import shutil
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
+from fastapi.templating import Jinja2Templates
 import torch
-import open_clip_torch as open_clip  # Corrected import
+import open_clip
+from PIL import Image
+import numpy as np
+import faiss
 
-# Setup
+# === CONFIG ===
+RECOMMEND_DIR = "static/recommendations"
+UPLOAD_DIR = "static/uploads"
+TOP_K = 5
+
+# === SETUP ===
 app = FastAPI()
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
-RECOMMEND_DIR = os.path.join(BASE_DIR, "static", "recommendations")
-
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(RECOMMEND_DIR, exist_ok=True)
-
 templates = Jinja2Templates(directory="templates")
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Load model
 device = "cpu"
-print("[INFO] Loading model...")
-model, _, preprocess = open_clip.load("ViT-B/32", device=device)
-model.eval()
-print("[INFO] Model loaded.")
+model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="laion2b_s34b_b79k")
+tokenizer = open_clip.get_tokenizer("ViT-B-32")
 
-# Util
-def get_image_features(image_path):
-    try:
-        image = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
-        with torch.no_grad():
-            features = model.encode_image(image)
-        return features
-    except Exception as e:
-        print(f"[ERROR] Failed to get image features for {image_path}: {e}")
-        return None
+index = None
+recommendation_images = []
 
-def calculate_similarity(query_features, candidate_features):
-    return torch.nn.functional.cosine_similarity(query_features, candidate_features).item()
+# === UTILS ===
+def extract_features(image_path):
+    image = Image.open(image_path).convert("RGB")
+    image_tensor = preprocess(image).unsqueeze(0).to(device)
+    with torch.no_grad():
+        features = model.encode_image(image_tensor).cpu().numpy()
+    return features / np.linalg.norm(features)
 
-# Routes
+def build_faiss_index():
+    global index, recommendation_images
+    print("[INFO] Building FAISS index...")
+    image_paths = sorted([f for f in os.listdir(RECOMMEND_DIR) if f.lower().endswith(("jpg", "jpeg", "png"))])
+    vectors = []
+    recommendation_images = []
+
+    for filename in image_paths:
+        path = os.path.join(RECOMMEND_DIR, filename)
+        try:
+            vec = extract_features(path)
+            vectors.append(vec)
+            recommendation_images.append(filename)
+        except Exception as e:
+            print(f"[ERROR] Failed to process {filename}: {e}")
+
+    if vectors:
+        vectors_np = np.vstack(vectors).astype("float32")
+        index = faiss.IndexFlatL2(vectors_np.shape[1])
+        index.add(vectors_np)
+        print(f"[INFO] FAISS index built with {len(vectors)} images.")
+    else:
+        print("[WARNING] No images indexed.")
+
+# === ROUTES ===
+@app.on_event("startup")
+def startup_event():
+    build_faiss_index()
+
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "results": []})
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/search", response_class=HTMLResponse)
 async def search(request: Request, file: UploadFile = File(...)):
-    print(f"[INFO] Uploading file: {file.filename}")
+    if not os.path.exists(UPLOAD_DIR):
+        os.makedirs(UPLOAD_DIR)
+    upload_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(upload_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    print(f"[INFO] Uploaded: {file.filename}")
     try:
-        filename = f"{uuid.uuid4()}_{file.filename}"
-        uploaded_path = os.path.join(UPLOAD_DIR, filename)
-
-        with open(uploaded_path, "wb") as f:
-            f.write(await file.read())
-        print(f"[INFO] File saved to: {uploaded_path}")
+        query_vec = extract_features(upload_path).astype("float32")
+        D, I = index.search(query_vec, TOP_K)
+        results = [recommendation_images[i] for i in I[0]]
+        print(f"[INFO] Top-{TOP_K} results: {results}")
     except Exception as e:
-        print(f"[ERROR] Failed to save uploaded file: {e}")
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "results": [],
-            "error": f"Failed to save file: {e}"
-        })
-
-    query_features = get_image_features(uploaded_path)
-    if query_features is None:
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "results": [],
-            "error": "Could not process uploaded image."
-        })
-
-    similarities = []
-    for fname in os.listdir(RECOMMEND_DIR):
-        fpath = os.path.join(RECOMMEND_DIR, fname)
-        candidate_features = get_image_features(fpath)
-        if candidate_features is not None:
-            sim = calculate_similarity(query_features, candidate_features)
-            similarities.append((fname, sim))
-        else:
-            print(f"[WARN] Skipping image: {fpath}")
-
-    similarities.sort(key=lambda x: x[1], reverse=True)
-    top_matches = [os.path.join("static", "recommendations", fname) for fname, _ in similarities[:6]]
-
-    print(f"[INFO] Found {len(top_matches)} matches.")
+        print(f"[ERROR] Failed to search: {e}")
+        results = []
 
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "results": top_matches,
-        "uploaded": os.path.join("static", "uploads", filename)
+        "uploaded": file.filename,
+        "results": results
     })
+
+@app.get("/images", response_class=HTMLResponse)
+async def manage_images(request: Request):
+    images = os.listdir(RECOMMEND_DIR)
+    return templates.TemplateResponse("images.html", {"request": request, "images": images})
