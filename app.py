@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os, shutil
 import torch
-import clip
+import open_clip
 from PIL import Image
 import numpy as np
 import faiss
@@ -20,7 +20,7 @@ templates = Jinja2Templates(directory="templates")
 
 # Load model
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = clip.load("ViT-B/32", device=device)
+model, preprocess = open_clip.load("ViT-B/32", device=device)
 
 # FAISS setup
 def get_image_features(image_paths):
