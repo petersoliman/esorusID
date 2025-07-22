@@ -63,14 +63,18 @@ def build_index():
     print("Building FAISS index from recommendation images...")
     image_features = []
     image_filenames = []
-    for image_path in RECOMMEND_FOLDER.glob("*.*"):
+    image_paths = list(RECOMMEND_FOLDER.glob("*.*"))
+    total = len(image_paths)
+    for i, image_path in enumerate(image_paths, start=1):
         try:
+            logging.info(f"[{i}/{total}] Loading {image_path.name}")
             img = Image.open(image_path).convert("RGB")
             feature = extract_features(img)
             image_features.append(feature)
             image_filenames.append(image_path.name)
         except Exception as e:
-            print(f"Failed to process {image_path.name}: {e}")
+            logging.warning(f"Failed to process {image_path.name}: {e}")
+
     if image_features:
         features_array = np.vstack(image_features)
         index = faiss.IndexFlatL2(features_array.shape[1])
