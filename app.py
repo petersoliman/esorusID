@@ -20,7 +20,8 @@ templates = Jinja2Templates(directory="templates")
 
 # Load model
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = open_clip.load("ViT-B/32", device=device)
+model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
+model.to(device)
 
 # FAISS setup
 def get_image_features(image_paths):
