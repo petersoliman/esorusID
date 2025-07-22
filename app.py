@@ -51,7 +51,7 @@ def build_index():
     print("Building FAISS index from recommendation images...")
     image_features = []
     image_filenames = []
-    for image_path in RECOMMEND_FOLDER.glob("*.*"):
+    for image_path in RECOMMEND_FOLDER.glob("*.*")[:3]:
         try:
             img = Image.open(image_path).convert("RGB")
             feature = extract_features(img)
