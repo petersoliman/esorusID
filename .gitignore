@@ -1,5 +1,5 @@
 # Ignore uploaded temp files
-static/uploadeds/*
+static/uploads/*
 
 # Ignore all images in recommendations (optional)
 static/recommendations/*
@@ -16,5 +16,5 @@ __pycache__/
 venv/
 env/
 
-# Ignore system-specific files
-.DS_Store
+# Ignore macOS system files recursively
+**/.DS_Store
