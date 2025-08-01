@@ -1,9 +1,8 @@
 # Base image
 FROM python:3.11-slim
 
-# Install system dependencies (libgl1 is required for OpenCV/Pillow)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    git \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -11,8 +10,10 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Install Python dependencies (using simplified requirements)
+# Copy requirements first for better caching
 COPY requirements_simple.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements_simple.txt
 
 # Copy app code
