@@ -14,7 +14,6 @@
       <div class="header-content">
         <a href="/" class="logo">
           <img src="{{ url_for('static', path='logo.png') }}" alt="Esorus Logo">
-          <span class="logo-text">Esorus</span>
         </a>
         <nav class="nav-links">
           <a href="/">Search</a>
@@ -74,7 +73,7 @@
         <!-- Results Section -->
         {% if results %}
         <div class="results-section">
-          <h3 class="section-title">Similar Images Found</h3>
+          <h3 class="section-title">We found {{ results|length }} products in our database</h3>
           <div class="results-grid">
             {% for image in results %}
             <div class="result-card">
