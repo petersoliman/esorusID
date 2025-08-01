@@ -1,16 +1,126 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Edit Image</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit Image - Esorus</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <h1>Edit Image: {{ filename }}</h1>
-  <img src="{{ url_for('static', path='recommendations/' ~ filename) }}" style="max-width:200px;"><br><br>
-  <form action="/images/edit/{{ filename }}" method="post" enctype="multipart/form-data">
-    <input type="file" name="file" required>
-    <button type="submit">Replace Image</button>
-  </form>
-  <br>
-  <a href="/images">← Back to Image List</a>
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="logo">
+          <img src="{{ url_for('static', path='logo.png') }}" alt="Esorus Logo">
+          <span class="logo-text">Esorus</span>
+        </a>
+        <nav class="nav-links">
+          <a href="/">Search</a>
+          <a href="/images">Manage Images</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="container">
+      <!-- Page Header -->
+      <div class="page-header">
+        <h1 class="page-title">Edit Image</h1>
+        <p class="page-subtitle">Replace the current image with a new one.</p>
+      </div>
+
+      <!-- Edit Form -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Current Image: {{ image }}</h2>
+        </div>
+        
+        <!-- Current Image Preview -->
+        <div class="text-center mb-4">
+          <img src="{{ url_for('static', path='recommendations/' ~ image) }}" 
+               alt="Current image" 
+               class="uploaded-image">
+        </div>
+        
+        <form action="/images/edit/{{ image }}" method="post" enctype="multipart/form-data" id="uploadForm">
+          <div class="file-input-wrapper">
+            <input type="file" name="file" id="fileInput" class="file-input" accept="image/*" required>
+            <label for="fileInput" class="file-input-label" id="fileInputLabel">
+              <div class="upload-area">
+                <div class="upload-icon">🔄</div>
+                <div class="upload-text">Click to upload replacement image</div>
+                <div class="upload-hint">Supports JPG, PNG, GIF up to 10MB</div>
+              </div>
+            </label>
+          </div>
+          
+          <div class="text-center mt-4">
+            <button type="submit" class="btn btn-primary" id="submitBtn">
+              <span class="btn-text">Replace Image</span>
+              <span class="spinner" style="display: none;"></span>
+            </button>
+            <a href="/images" class="btn btn-secondary ml-3">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // File input handling
+    const fileInput = document.getElementById('fileInput');
+    const fileInputLabel = document.getElementById('fileInputLabel');
+    const uploadForm = document.getElementById('uploadForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const btnText = submitBtn.querySelector('.btn-text');
+    const spinner = submitBtn.querySelector('.spinner');
+
+    // Drag and drop functionality
+    fileInputLabel.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      fileInputLabel.classList.add('dragover');
+    });
+
+    fileInputLabel.addEventListener('dragleave', () => {
+      fileInputLabel.classList.remove('dragover');
+    });
+
+    fileInputLabel.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileInputLabel.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        fileInput.files = files;
+        updateFileLabel();
+      }
+    });
+
+    // File selection
+    fileInput.addEventListener('change', updateFileLabel);
+
+    function updateFileLabel() {
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        fileInputLabel.innerHTML = `
+          <div class="upload-area">
+            <div class="upload-icon">✅</div>
+            <div class="upload-text">${file.name}</div>
+            <div class="upload-hint">${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+          </div>
+        `;
+      }
+    }
+
+    // Form submission
+    uploadForm.addEventListener('submit', () => {
+      submitBtn.classList.add('loading');
+      btnText.style.display = 'none';
+      spinner.style.display = 'inline-block';
+    });
+  </script>
 </body>
 </html>

@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+numpy
+Pillow
+open-clip-torch
+faiss-cpu
+opencv-python
+matplotlib
+torch
+torchvision
+torchaudio
+python-multipart 

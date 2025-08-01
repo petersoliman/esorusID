@@ -1,32 +1,158 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Image Upload & Recommendation</title>
-  <style>
-    body { font-family: Arial; padding: 20px; }
-    img { max-width: 200px; margin: 10px; border: 1px solid #ccc; }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Esorus - AI Image Similarity Search</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <h1>Upload an Image</h1>
-  <form action="/search" method="post" enctype="multipart/form-data">
-    <input type="file" name="file" required>
-    <button type="submit">Upload & Recommend</button>
-  </form>
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="logo">
+          <img src="{{ url_for('static', path='logo.png') }}" alt="Esorus Logo">
+          <span class="logo-text">Esorus</span>
+        </a>
+        <nav class="nav-links">
+          <a href="/">Search</a>
+          <a href="/images">Manage Images</a>
+        </nav>
+      </div>
+    </div>
+  </header>
 
-  {% if uploaded %}
-    <h2>Uploaded Image:</h2>
-    <img src="{{ url_for('static', path='uploads/' ~ uploaded) }}">
-  {% endif %}
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="container">
+      <!-- Compact Page Header -->
+      <div class="page-header">
+        <h1 class="page-title">AI Image Similarity Search</h1>
+        <p class="page-subtitle">Upload an image and discover visually similar images from our curated collection.</p>
+      </div>
 
-  {% if results %}
-    <h2>Recommended Images:</h2>
-    {% for image in results %}
-      <img src="{{ url_for('static', path='recommendations/' ~ image) }}">
-    {% endfor %}
-  {% endif %}
+      <!-- Compact Upload Section -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Upload Your Image</h2>
+        </div>
+        
+        <form action="/search" method="post" enctype="multipart/form-data" id="uploadForm">
+          <div class="file-input-wrapper">
+            <input type="file" name="file" id="fileInput" class="file-input" accept="image/*" required>
+            <label for="fileInput" class="file-input-label" id="fileInputLabel">
+              <div class="upload-area">
+                <div class="upload-icon">📷</div>
+                <div class="upload-text">Click to upload or drag and drop</div>
+                <div class="upload-hint">Supports JPG, PNG, GIF up to 10MB</div>
+              </div>
+            </label>
+          </div>
+          
+          <div class="text-center mt-3">
+            <button type="submit" class="btn btn-primary" id="submitBtn">
+              <span class="btn-text">Search Similar Images</span>
+              <span class="spinner" style="display: none;"></span>
+            </button>
+          </div>
+        </form>
+      </div>
 
-  <br><br>
-  <a href="/images">Manage Recommendation Images</a>
+      <!-- Compact Results Layout -->
+      {% if uploaded or results %}
+      <div class="results-container">
+        <!-- Uploaded Image Display -->
+        {% if uploaded %}
+        <div class="uploaded-image-section">
+          <h3 class="section-title">Your Uploaded Image</h3>
+          <img src="{{ url_for('static', path='uploads/' ~ uploaded) }}" alt="Uploaded image" class="uploaded-image">
+        </div>
+        {% endif %}
+
+        <!-- Results Section -->
+        {% if results %}
+        <div class="results-section">
+          <h3 class="section-title">Similar Images Found</h3>
+          <div class="results-grid">
+            {% for image in results %}
+            <div class="result-card">
+              <img src="{{ url_for('static', path='recommendations/' ~ image) }}" alt="Similar image">
+              <div class="result-card-content">
+                <div class="result-card-title">{{ image }}</div>
+                <div class="result-card-similarity">Similarity: {{ loop.index }}/5</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- No Results Message -->
+        {% if uploaded and not results %}
+        <div class="no-results-section">
+          <h3 class="section-title">No Similar Images Found</h3>
+          <p class="text-secondary">We couldn't find any similar images in our collection. Try uploading a different image or add more images to our recommendation database.</p>
+          <a href="/images" class="btn btn-secondary mt-2">Manage Images</a>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </main>
+
+  <script>
+    // File input handling
+    const fileInput = document.getElementById('fileInput');
+    const fileInputLabel = document.getElementById('fileInputLabel');
+    const uploadForm = document.getElementById('uploadForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const btnText = submitBtn.querySelector('.btn-text');
+    const spinner = submitBtn.querySelector('.spinner');
+
+    // Drag and drop functionality
+    fileInputLabel.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      fileInputLabel.classList.add('dragover');
+    });
+
+    fileInputLabel.addEventListener('dragleave', () => {
+      fileInputLabel.classList.remove('dragover');
+    });
+
+    fileInputLabel.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileInputLabel.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        fileInput.files = files;
+        updateFileLabel();
+      }
+    });
+
+    // File selection
+    fileInput.addEventListener('change', updateFileLabel);
+
+    function updateFileLabel() {
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        fileInputLabel.innerHTML = `
+          <div class="upload-area">
+            <div class="upload-icon">✅</div>
+            <div class="upload-text">${file.name}</div>
+            <div class="upload-hint">${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+          </div>
+        `;
+      }
+    }
+
+    // Form submission
+    uploadForm.addEventListener('submit', () => {
+      submitBtn.classList.add('loading');
+      btnText.style.display = 'none';
+      spinner.style.display = 'inline-block';
+    });
+  </script>
 </body>
 </html>

@@ -1,8 +1,12 @@
 # Ignore uploaded temp files
 static/uploads/*
 
-# Ignore all images in recommendations (optional)
-static/recommendations/*
+# Allow recommendation images (they are part of the dataset)
+!static/recommendations/*.jpg
+!static/recommendations/*.jpeg
+!static/recommendations/*.png
+!static/recommendations/*.gif
+!static/recommendations/*.webp
 
 # Ignore Python cache and compiled files
 __pycache__/

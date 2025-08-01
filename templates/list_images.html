@@ -1,25 +1,80 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Manage Recommendation Images</title>
-  <style>
-    body { font-family: Arial; padding: 20px; }
-    img { max-width: 150px; margin: 10px; border: 1px solid #ccc; }
-    .image-box { display: inline-block; text-align: center; margin: 10px; }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manage Images - Esorus</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <h1>Recommendation Images</h1>
-  <a href="/images/add">+ Add New Image</a> | <a href="/">← Back to Upload</a>
-  <div>
-    {% for image in images %}
-      <div class="image-box">
-        <img src="{{ url_for('static', path='recommendations/' ~ image) }}"><br>
-        {{ image }}<br>
-        <a href="/images/edit/{{ image }}">Edit</a> |
-        <a href="/images/delete/{{ image }}" onclick="return confirm('Are you sure?')">Delete</a>
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="logo">
+          <img src="{{ url_for('static', path='logo.png') }}" alt="Esorus Logo">
+          <span class="logo-text">Esorus</span>
+        </a>
+        <nav class="nav-links">
+          <a href="/">Search</a>
+          <a href="/images">Manage Images</a>
+        </nav>
       </div>
-    {% endfor %}
-  </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="container">
+      <div class="page-header">
+        <h1 class="page-title">Manage Recommendation Images</h1>
+        <p class="page-subtitle">Add, edit, or remove images from your recommendation database.</p>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-section">
+        <a href="/images/add" class="btn btn-primary">+ Add New Image</a>
+      </div>
+
+      <!-- Messages -->
+      {% if request.query_params.get('message') %}
+      <div class="message success">
+        {{ request.query_params.get('message') }}
+      </div>
+      {% endif %}
+      
+      {% if request.query_params.get('error') %}
+      <div class="message error">
+        {{ request.query_params.get('error') }}
+      </div>
+      {% endif %}
+
+      <!-- Images Grid -->
+      <div class="image-grid">
+        {% for image in images %}
+        <div class="image-card">
+          <img src="{{ url_for('static', path='recommendations/' ~ image) }}" alt="{{ image }}">
+          <div class="image-card-content">
+            <div class="image-card-title">{{ image }}</div>
+            <div class="image-card-actions">
+              <a href="/images/edit/{{ image }}" class="btn btn-sm btn-secondary">Edit</a>
+              <a href="/images/delete/{{ image }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this image?')">Delete</a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Empty State -->
+      {% if not images %}
+      <div class="empty-state">
+        <h3>No Images Found</h3>
+        <p>Add some images to your recommendation database to get started.</p>
+        <a href="/images/add" class="btn btn-primary">Add Your First Image</a>
+      </div>
+      {% endif %}
+    </div>
+  </main>
 </body>
 </html>

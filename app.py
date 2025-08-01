@@ -1,9 +1,8 @@
-from fastapi import FastAPI, Request, UploadFile, Form
+from fastapi import FastAPI, Request, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from shutil import copyfile
 import os
 import uuid
 import torch
@@ -12,9 +11,13 @@ from PIL import Image
 import numpy as np
 import open_clip
 import logging
+import json
 
 logging.basicConfig(level=logging.INFO)
 
+# Configuration
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
 
 app = FastAPI()
 
@@ -26,13 +29,33 @@ RECOMMEND_FOLDER = Path("static/recommendations")
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 RECOMMEND_FOLDER.mkdir(parents=True, exist_ok=True)
 
-# Global index and image metadata
+# Index file paths (created by index_images.py)
+INDEX_PATH = "data/image_index.faiss"
+MAPPING_PATH = "data/image_paths.json"
+
+# Global variables
 index = None
-image_features = []
 image_filenames = []
 model = None
 preprocess = None
 device = "cpu"
+
+
+def validate_image_file(file: UploadFile) -> bool:
+    """Validate uploaded image file"""
+    if not file.filename:
+        return False
+    
+    # Check file extension
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        return False
+    
+    # Check file size (if available)
+    if hasattr(file, 'size') and file.size and file.size > MAX_FILE_SIZE:
+        return False
+    
+    return True
 
 
 def load_model():
@@ -58,31 +81,26 @@ def extract_features(image: Image.Image):
     return features.astype("float32")
 
 
-def build_index():
-    global index, image_features, image_filenames
-    print("Building FAISS index from recommendation images...")
-    image_features = []
-    image_filenames = []
-    image_paths = list(RECOMMEND_FOLDER.glob("*.*"))
-    total = len(image_paths)
-    for i, image_path in enumerate(image_paths, start=1):
-        try:
-            logging.info(f"[{i}/{total}] Loading {image_path.name}")
-            img = Image.open(image_path).convert("RGB")
-            feature = extract_features(img)
-            image_features.append(feature)
-            image_filenames.append(image_path.name)
-        except Exception as e:
-            logging.warning(f"Failed to process {image_path.name}: {e}")
-
-    if image_features:
-        features_array = np.vstack(image_features)
-        index = faiss.IndexFlatL2(features_array.shape[1])
-        index.add(features_array)
-        print(f"Indexed {len(image_filenames)} images.")
-    else:
+def load_index():
+    """Load the pre-built index from files"""
+    global index, image_filenames
+    try:
+        if os.path.exists(INDEX_PATH) and os.path.exists(MAPPING_PATH):
+            index = faiss.read_index(INDEX_PATH)
+            with open(MAPPING_PATH, "r") as f:
+                image_filenames = json.load(f)
+            print(f"✅ Loaded index with {len(image_filenames)} images")
+            return True
+        else:
+            print("❌ Index files not found. Run index_images.py first.")
+            index = None
+            image_filenames = []
+            return False
+    except Exception as e:
+        print(f"❌ Error loading index: {e}")
         index = None
-        print("No images indexed.")
+        image_filenames = []
+        return False
 
 
 @app.on_event("startup")
@@ -93,9 +111,9 @@ async def startup_event():
         load_model()
         logging.info("Model loaded successfully.")
 
-        logging.info("Indexing recommendation images...")
-        build_index()
-        logging.info("Images indexed successfully.")
+        logging.info("Loading pre-built index...")
+        load_index()
+        logging.info("Index loading completed.")
     except Exception as e:
         logging.exception("Startup failed due to exception:")
 
@@ -107,22 +125,79 @@ async def home(request: Request):
 
 @app.post("/search", response_class=HTMLResponse)
 async def search(request: Request, file: UploadFile):
-    contents = await file.read()
-    ext = file.filename.split(".")[-1]
-    name = f"{uuid.uuid4()}.{ext}"
-    path = UPLOAD_FOLDER / name
-    with open(path, "wb") as f:
-        f.write(contents)
+    try:
+        # Validate file
+        if not validate_image_file(file):
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error": "Please upload a valid image file (JPG, PNG, GIF, BMP, WebP) under 10MB."
+            })
+        
+        contents = await file.read()
+        
+        # Check file size after reading
+        if len(contents) > MAX_FILE_SIZE:
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error": "File size too large. Please upload an image under 10MB."
+            })
+        
+        ext = file.filename.split(".")[-1]
+        name = f"{uuid.uuid4()}.{ext}"
+        path = UPLOAD_FOLDER / name
+        
+        with open(path, "wb") as f:
+            f.write(contents)
 
-    img = Image.open(path).convert("RGB")
-    query_feat = extract_features(img)
+        # Validate image can be opened
+        try:
+            img = Image.open(path).convert("RGB")
+        except Exception as e:
+            os.remove(path)  # Clean up invalid file
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error": "Invalid image file. Please upload a valid image."
+            })
 
-    if index is None or len(image_filenames) == 0:
-        return templates.TemplateResponse("index.html", {"request": request, "uploaded": name, "results": []})
+        query_feat = extract_features(img)
 
-    D, I = index.search(np.expand_dims(query_feat, axis=0), k=5)
-    results = [image_filenames[i] for i in I[0]]
-    return templates.TemplateResponse("index.html", {"request": request, "uploaded": name, "results": results})
+        # Check if index exists and has images
+        if index is None:
+            return templates.TemplateResponse("results.html", {
+                "request": request, 
+                "uploaded": name, 
+                "results": [],
+                "message": "No search index available. Please run index_images.py to build the index."
+            })
+        
+        if len(image_filenames) == 0:
+            return templates.TemplateResponse("results.html", {
+                "request": request, 
+                "uploaded": name, 
+                "results": [],
+                "message": "No images in the index. Please run index_images.py to build the index."
+            })
+
+        D, I = index.search(np.expand_dims(query_feat, axis=0), k=12)
+        results = [image_filenames[i] for i in I[0]]
+        return templates.TemplateResponse("results.html", {"request": request, "uploaded": name, "results": results})
+        
+    except Exception as e:
+        logging.error(f"Search error: {e}")
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error": "An error occurred during search. Please try again."
+        })
+
+
+@app.get("/results/{image_name}", response_class=HTMLResponse)
+async def show_results(request: Request, image_name: str):
+    # Check if the image exists
+    image_path = UPLOAD_FOLDER / image_name
+    if not image_path.exists():
+        return RedirectResponse(url="/", status_code=302)
+    
+    return templates.TemplateResponse("results.html", {"request": request, "uploaded": image_name, "results": []})
 
 
 @app.get("/images", response_class=HTMLResponse)
@@ -138,14 +213,29 @@ async def add_image_form(request: Request):
 
 @app.post("/images/add")
 async def add_image(request: Request, file: UploadFile):
-    contents = await file.read()
-    ext = file.filename.split(".")[-1]
-    name = f"{uuid.uuid4()}.{ext}"
-    path = RECOMMEND_FOLDER / name
-    with open(path, "wb") as f:
-        f.write(contents)
-    build_index()
-    return RedirectResponse(url="/images", status_code=302)
+    try:
+        # Validate file
+        if not validate_image_file(file):
+            return RedirectResponse(url="/images?error=Please upload a valid image file under 10MB", status_code=302)
+        
+        contents = await file.read()
+        
+        # Check file size
+        if len(contents) > MAX_FILE_SIZE:
+            return RedirectResponse(url="/images?error=File size too large. Please upload an image under 10MB", status_code=302)
+        
+        ext = file.filename.split(".")[-1]
+        name = f"{uuid.uuid4()}.{ext}"
+        path = RECOMMEND_FOLDER / name
+        
+        with open(path, "wb") as f:
+            f.write(contents)
+            
+        return RedirectResponse(url="/images?message=Image added successfully. Run index_images.py to update the search index.", status_code=302)
+        
+    except Exception as e:
+        logging.error(f"Add image error: {e}")
+        return RedirectResponse(url="/images?error=Failed to add image", status_code=302)
 
 
 @app.get("/images/edit/{image_name}", response_class=HTMLResponse)
@@ -155,19 +245,39 @@ async def edit_image_form(request: Request, image_name: str):
 
 @app.post("/images/edit/{image_name}")
 async def edit_image(image_name: str, file: UploadFile):
-    path = RECOMMEND_FOLDER / image_name
-    if path.exists():
+    try:
+        # Validate file
+        if not validate_image_file(file):
+            return RedirectResponse(url="/images?error=Please upload a valid image file under 10MB", status_code=302)
+        
         contents = await file.read()
-        with open(path, "wb") as f:
-            f.write(contents)
-    build_index()
-    return RedirectResponse(url="/images", status_code=302)
+        
+        # Check file size
+        if len(contents) > MAX_FILE_SIZE:
+            return RedirectResponse(url="/images?error=File size too large. Please upload an image under 10MB", status_code=302)
+        
+        path = RECOMMEND_FOLDER / image_name
+        if path.exists():
+            with open(path, "wb") as f:
+                f.write(contents)
+            return RedirectResponse(url="/images?message=Image updated successfully. Run index_images.py to update the search index.", status_code=302)
+        else:
+            return RedirectResponse(url="/images?error=Image not found", status_code=302)
+            
+    except Exception as e:
+        logging.error(f"Edit image error: {e}")
+        return RedirectResponse(url="/images?error=Failed to update image", status_code=302)
 
 
 @app.get("/images/delete/{image_name}")
 async def delete_image(image_name: str):
-    path = RECOMMEND_FOLDER / image_name
-    if path.exists():
-        os.remove(path)
-    build_index()
-    return RedirectResponse(url="/images", status_code=302)
+    try:
+        path = RECOMMEND_FOLDER / image_name
+        if path.exists():
+            os.remove(path)
+            return RedirectResponse(url="/images?message=Image deleted successfully. Run index_images.py to update the search index.", status_code=302)
+        else:
+            return RedirectResponse(url="/images?error=Image not found", status_code=302)
+    except Exception as e:
+        logging.error(f"Delete image error: {e}")
+        return RedirectResponse(url="/images?error=Failed to delete image", status_code=302)

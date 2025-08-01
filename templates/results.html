@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search Results - Esorus</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="logo">
+          <img src="{{ url_for('static', path='logo.png') }}" alt="Esorus Logo">
+          <span class="logo-text">Esorus</span>
+        </a>
+        <nav class="nav-links">
+          <a href="/">New Search</a>
+          <a href="/images">Manage Images</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="container">
+      <!-- Original Search Image -->
+      <div class="original-image-section">
+        <h1 class="page-title">Search Results</h1>
+        <div class="original-image-container">
+          <h2 class="section-title">Your Search Image</h2>
+          <div class="original-image-wrapper">
+            <img src="{{ url_for('static', path='uploads/' ~ uploaded) }}" alt="Search image" class="original-image">
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      {% if results %}
+      <div class="results-section">
+        <h2 class="section-title">Similar Images Found ({{ results|length }})</h2>
+        <div class="results-grid">
+          {% for image in results %}
+          <div class="result-card">
+            <div class="result-image" data-image-src="{{ url_for('static', path='recommendations/' ~ image) }}" data-image-title="{{ image }}">
+              <img src="{{ url_for('static', path='recommendations/' ~ image) }}" alt="Similar image">
+            </div>
+            <div class="result-info">
+              <div class="result-title">{{ image }}</div>
+              <div class="result-rank">Rank: {{ loop.index }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="no-results-section">
+        <h2 class="section-title">No Similar Images Found</h2>
+        {% if message %}
+        <p class="text-secondary">{{ message }}</p>
+        {% else %}
+        <p class="text-secondary">We couldn't find any similar images in our collection. Try uploading a different image or add more images to our recommendation database.</p>
+        {% endif %}
+        <div class="action-buttons">
+          <a href="/" class="btn btn-primary">Try New Search</a>
+          <a href="/images" class="btn btn-secondary">Manage Images</a>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Action Buttons -->
+      {% if results %}
+      <div class="action-section">
+        <a href="/" class="btn btn-primary">New Search</a>
+        <a href="/images" class="btn btn-secondary">Manage Images</a>
+      </div>
+      {% endif %}
+    </div>
+  </main>
+
+  <!-- Fullscreen Modal -->
+  <div id="fullscreenModal" class="fullscreen-modal" onclick="closeFullscreen()">
+    <div class="modal-content">
+      <img id="fullscreenImage" src="" alt="Fullscreen image">
+      <div class="modal-info">
+        <h3 id="modalTitle"></h3>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Add click event listeners to all result images
+    document.addEventListener('DOMContentLoaded', function() {
+      const resultImages = document.querySelectorAll('.result-image');
+      resultImages.forEach(function(element) {
+        element.addEventListener('click', function() {
+          const imageSrc = this.getAttribute('data-image-src');
+          const imageTitle = this.getAttribute('data-image-title');
+          openFullscreen(imageSrc, imageTitle);
+        });
+      });
+    });
+
+    function openFullscreen(imageSrc, imageTitle) {
+      const modal = document.getElementById('fullscreenModal');
+      const modalImage = document.getElementById('fullscreenImage');
+      const modalTitle = document.getElementById('modalTitle');
+      
+      modalImage.src = imageSrc;
+      modalTitle.textContent = imageTitle;
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden'; // Prevent scrolling
+    }
+
+    function closeFullscreen() {
+      const modal = document.getElementById('fullscreenModal');
+      modal.style.display = 'none';
+      document.body.style.overflow = 'auto'; // Restore scrolling
+    }
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeFullscreen();
+      }
+    });
+  </script>
+</body>
+</html> 
