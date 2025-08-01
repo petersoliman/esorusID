@@ -145,8 +145,16 @@ def load_index():
     """Load the pre-built index from files"""
     global index, image_filenames
     try:
+        print(f"🔍 Looking for index files:")
+        print(f"   INDEX_PATH: {INDEX_PATH}")
+        print(f"   MAPPING_PATH: {MAPPING_PATH}")
+        print(f"   INDEX_PATH exists: {os.path.exists(INDEX_PATH)}")
+        print(f"   MAPPING_PATH exists: {os.path.exists(MAPPING_PATH)}")
+        
         if os.path.exists(INDEX_PATH) and os.path.exists(MAPPING_PATH):
-            index = faiss.read_index(INDEX_PATH)
+            print(f"📁 Loading index from {INDEX_PATH}")
+            index = faiss.read_index(str(INDEX_PATH))
+            print(f"📁 Loading mapping from {MAPPING_PATH}")
             with open(MAPPING_PATH, "r") as f:
                 image_filenames = json.load(f)
             print(f"✅ Loaded index with {len(image_filenames)} images")
