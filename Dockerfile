@@ -1,6 +1,13 @@
 # Base image
 FROM python:3.11-slim
 
+# Install system dependencies (libgl1 is required for OpenCV/Pillow)
+RUN apt-get update && apt-get install -y \
+    git \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
