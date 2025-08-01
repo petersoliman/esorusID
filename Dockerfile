@@ -8,18 +8,18 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-
 # Set working directory
 WORKDIR /app
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (using simplified requirements)
+COPY requirements_simple.txt .
+RUN pip install --no-cache-dir -r requirements_simple.txt
 
 # Copy app code
 COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/static/recommendations /app/static/uploads
 
 # Expose port
 EXPOSE 8000

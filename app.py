@@ -5,14 +5,27 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import os
 import uuid
-import torch
-import faiss
-from PIL import Image
-import numpy as np
-import open_clip
 import logging
 import json
-from index_images import index_images
+
+# Try to import ML dependencies, but don't fail if they're not available
+try:
+    import torch
+    import faiss
+    from PIL import Image
+    import numpy as np
+    import open_clip
+    ML_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"ML dependencies not available: {e}")
+    ML_AVAILABLE = False
+
+try:
+    from index_images import index_images
+    INDEXING_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Indexing not available: {e}")
+    INDEXING_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
 
@@ -297,7 +310,14 @@ async def delete_image(image_name: str):
 @app.get("/reindex")
 def reindex():
     try:
+        if not INDEXING_AVAILABLE:
+            return {"status": "error", "message": "Indexing functionality not available. ML dependencies may not be installed."}
+        
+        if not ML_AVAILABLE:
+            return {"status": "error", "message": "ML dependencies not available. Please install required packages."}
+        
         index_images()
         return {"status": "success", "message": "Reindexing complete"}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logging.error(f"Reindex error: {e}")
+        return {"status": "error", "message": f"Reindexing failed: {str(e)}"}
