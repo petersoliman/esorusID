@@ -12,6 +12,7 @@ import numpy as np
 import open_clip
 import logging
 import json
+from index_images import index_images
 
 logging.basicConfig(level=logging.INFO)
 
@@ -281,3 +282,12 @@ async def delete_image(image_name: str):
     except Exception as e:
         logging.error(f"Delete image error: {e}")
         return RedirectResponse(url="/images?error=Failed to delete image", status_code=302)
+
+
+@app.get("/reindex")
+def reindex():
+    try:
+        index_images()
+        return {"status": "success", "message": "Reindexing complete"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
