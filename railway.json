@@ -1,0 +1,25 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "startCommand": "python app.py",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 100,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  },
+  "volumes": [
+    {
+      "name": "data",
+      "mountPath": "/app/data",
+      "size": "1GB"
+    },
+    {
+      "name": "static",
+      "mountPath": "/app/static",
+      "size": "2GB"
+    }
+  ]
+} 

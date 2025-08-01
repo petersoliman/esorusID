@@ -22,17 +22,27 @@ ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
 
 app = FastAPI()
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Use Railway persistent storage if available, otherwise use local paths
+if os.path.exists('/app/data'):
+    # Railway persistent storage
+    DATA_DIR = Path('/app/data')
+    STATIC_DIR = Path('/app/static')
+else:
+    # Local development
+    DATA_DIR = Path('data')
+    STATIC_DIR = Path('static')
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory="templates")
 
-UPLOAD_FOLDER = Path("static/uploads")
-RECOMMEND_FOLDER = Path("static/recommendations")
+UPLOAD_FOLDER = STATIC_DIR / "uploads"
+RECOMMEND_FOLDER = STATIC_DIR / "recommendations"
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 RECOMMEND_FOLDER.mkdir(parents=True, exist_ok=True)
 
 # Index file paths (created by index_images.py)
-INDEX_PATH = "data/image_index.faiss"
-MAPPING_PATH = "data/image_paths.json"
+INDEX_PATH = DATA_DIR / "image_index.faiss"
+MAPPING_PATH = DATA_DIR / "image_paths.json"
 
 # Global variables
 index = None
