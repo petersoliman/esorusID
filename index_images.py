@@ -68,7 +68,7 @@ def index_images():
         index.add(features_array.astype("float32"))
 
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(index, INDEX_PATH)
+        faiss.write_index(index, str(INDEX_PATH))
 
         with open(MAPPING_PATH, "w") as f:
             json.dump(mapping, f)
