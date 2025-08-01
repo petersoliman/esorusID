@@ -98,7 +98,13 @@ def load_model():
     model.to(device)
 
 
-def extract_features(image: Image.Image):
+def extract_features(image):
+    if not ML_AVAILABLE:
+        raise ImportError("ML dependencies not available")
+    
+    if not hasattr(image, 'convert'):  # Check if it's a PIL Image
+        raise ValueError("Image must be a PIL Image object")
+    
     image_tensor = preprocess(image).unsqueeze(0).to(device)
     with torch.no_grad():
         features = model.encode_image(image_tensor).squeeze().cpu().numpy()
@@ -130,10 +136,13 @@ def load_index():
 @app.on_event("startup")
 async def startup_event():
     try:
-        logging.info("Loading model...")
-        global model, preprocess
-        load_model()
-        logging.info("Model loaded successfully.")
+        if ML_AVAILABLE:
+            logging.info("Loading model...")
+            global model, preprocess
+            load_model()
+            logging.info("Model loaded successfully.")
+        else:
+            logging.warning("ML dependencies not available. Skipping model loading.")
 
         logging.info("Loading pre-built index...")
         load_index()
@@ -175,6 +184,12 @@ async def search(request: Request, file: UploadFile):
 
         # Validate image can be opened
         try:
+            if not ML_AVAILABLE:
+                return templates.TemplateResponse("index.html", {
+                    "request": request,
+                    "error": "ML functionality not available. Please install required dependencies."
+                })
+            
             img = Image.open(path).convert("RGB")
         except Exception as e:
             os.remove(path)  # Clean up invalid file
@@ -183,7 +198,19 @@ async def search(request: Request, file: UploadFile):
                 "error": "Invalid image file. Please upload a valid image."
             })
 
-        query_feat = extract_features(img)
+        try:
+            query_feat = extract_features(img)
+        except ImportError:
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error": "ML functionality not available. Please install required dependencies."
+            })
+        except Exception as e:
+            logging.error(f"Feature extraction error: {e}")
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error": "Error processing image. Please try again."
+            })
 
         # Check if index exists and has images
         if index is None:
