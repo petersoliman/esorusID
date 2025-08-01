@@ -7,6 +7,7 @@ import os
 import uuid
 import logging
 import json
+from contextlib import asynccontextmanager
 
 # Try to import ML dependencies, but don't fail if they're not available
 try:
@@ -33,7 +34,30 @@ logging.basicConfig(level=logging.INFO)
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    try:
+        if ML_AVAILABLE:
+            logging.info("Loading model...")
+            global model, preprocess
+            load_model()
+            logging.info("Model loaded successfully.")
+        else:
+            logging.warning("ML dependencies not available. Skipping model loading.")
+
+        logging.info("Loading pre-built index...")
+        load_index()
+        logging.info("Index loading completed.")
+    except Exception as e:
+        logging.exception("Startup failed due to exception:")
+    
+    yield
+    
+    # Shutdown
+    logging.info("Shutting down...")
+
+app = FastAPI(lifespan=lifespan)
 
 # Use Railway persistent storage if available, otherwise use local paths
 if os.path.exists('/app/data'):
@@ -131,24 +155,6 @@ def load_index():
         index = None
         image_filenames = []
         return False
-
-
-@app.on_event("startup")
-async def startup_event():
-    try:
-        if ML_AVAILABLE:
-            logging.info("Loading model...")
-            global model, preprocess
-            load_model()
-            logging.info("Model loaded successfully.")
-        else:
-            logging.warning("ML dependencies not available. Skipping model loading.")
-
-        logging.info("Loading pre-built index...")
-        load_index()
-        logging.info("Index loading completed.")
-    except Exception as e:
-        logging.exception("Startup failed due to exception:")
 
 
 @app.get("/", response_class=HTMLResponse)
