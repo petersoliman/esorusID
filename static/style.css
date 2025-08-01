@@ -280,10 +280,19 @@ body {
 }
 
 .image-card-title {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-bottom: 0.5rem;
-  word-break: break-all;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-card-rank {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  font-weight: 500;
 }
 
 .image-card-actions {
@@ -375,7 +384,7 @@ body {
 
 .result-image {
   width: 100%;
-  height: 200px;
+  height: 160px;
   overflow: hidden;
 }
 
@@ -453,6 +462,19 @@ body {
 
 .result-image:hover {
   transform: scale(1.02);
+}
+
+/* Specific styling for result images in image cards */
+.image-card .result-image {
+  width: 100%;
+  height: 160px;
+  overflow: hidden;
+}
+
+.image-card .result-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* No Results Section */

@@ -42,15 +42,15 @@
       {% if results %}
       <div class="results-section">
         <h2 class="section-title">Similar Images Found ({{ results|length }})</h2>
-        <div class="results-grid">
+        <div class="image-grid">
           {% for image in results %}
-          <div class="result-card">
+          <div class="image-card">
             <div class="result-image" data-image-src="{{ url_for('static', path='recommendations/' ~ image) }}" data-image-title="{{ image }}">
-              <img src="{{ url_for('static', path='recommendations/' ~ image) }}" alt="Similar image">
+              <img src="{{ url_for('static', path='recommendations/' ~ image) }}" alt="{{ image }}">
             </div>
-            <div class="result-info">
-              <div class="result-title">{{ image }}</div>
-              <div class="result-rank">Rank: {{ loop.index }}</div>
+            <div class="image-card-content">
+              <div class="image-card-title">{{ image }}</div>
+              <div class="image-card-rank">Rank: {{ loop.index }}</div>
             </div>
           </div>
           {% endfor %}
