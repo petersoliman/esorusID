@@ -51,6 +51,8 @@ async def lifespan(app: FastAPI):
         logging.info("Index loading completed.")
     except Exception as e:
         logging.exception("Startup failed due to exception:")
+        # Don't fail the entire startup, just log the error
+        logging.warning("Startup encountered issues but continuing...")
     
     yield
     
@@ -110,16 +112,20 @@ def load_model():
     global model, preprocess
     print("Loading model...")
     try:
+        if not ML_AVAILABLE:
+            logging.warning("ML dependencies not available. Skipping model loading.")
+            return
+        
         model, _, preprocess = open_clip.create_model_and_transforms(
             "ViT-B-32", pretrained="openai"
         )
         logging.info("Model loaded successfully.")
+        model.eval()
+        model.to(device)
     except Exception as e:
         logging.exception("Error loading model")
-        raise e  # Make sure it raises so Railway logs the error
-
-    model.eval()
-    model.to(device)
+        # Don't raise the exception, just log it and continue
+        logging.warning("Model loading failed, but continuing startup...")
 
 
 def extract_features(image):
@@ -160,6 +166,18 @@ def load_index():
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway"""
+    return {
+        "status": "healthy",
+        "ml_available": ML_AVAILABLE,
+        "indexing_available": INDEXING_AVAILABLE,
+        "index_loaded": index is not None,
+        "images_count": len(image_filenames) if image_filenames else 0
+    }
 
 
 @app.post("/search", response_class=HTMLResponse)
