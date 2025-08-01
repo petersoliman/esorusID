@@ -367,8 +367,15 @@ def reindex():
         if not ML_AVAILABLE:
             return {"status": "error", "message": "ML dependencies not available. Please install required packages."}
         
+        # Run indexing
         index_images()
-        return {"status": "success", "message": "Reindexing complete"}
+        
+        # Reload the index after indexing
+        global index, image_filenames
+        if load_index():
+            return {"status": "success", "message": f"Reindexing complete. Loaded {len(image_filenames)} images."}
+        else:
+            return {"status": "error", "message": "Reindexing completed but failed to load the index."}
     except Exception as e:
         logging.error(f"Reindex error: {e}")
         return {"status": "error", "message": f"Reindexing failed: {str(e)}"}
