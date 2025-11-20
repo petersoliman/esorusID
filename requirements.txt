@@ -4,10 +4,10 @@ uvicorn[standard]==0.38.0
 gunicorn==23.0.0
 
 # ---- Core scientific libs ----
-numpy==2.2.4
+numpy==2.3.3
 Pillow==10.0.1
 opencv-python==4.8.1.78
-matplotlib==3.7.2
+matplotlib==3.8.1
 tqdm==4.66.1
 
 # ---- Machine Learning (CPU only) ----
