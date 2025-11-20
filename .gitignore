@@ -1,6 +1,7 @@
 # Ignore uploaded temp files
 static/uploads/*
 
+
 # Ignore recommendation images (they are large and can be regenerated)
 static/recommendations/*
 
