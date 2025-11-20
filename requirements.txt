@@ -1,6 +1,6 @@
 # ---- Server / API ----
 fastapi>=0.121.3
-uvicorn[standard]>=0.22.0
+uvicorn[standard]>=0.38.0
 gunicorn>=23.0.0
 
 # ---- Core scientific libs ----
@@ -11,10 +11,11 @@ matplotlib>=3.8.2
 tqdm>=4.66.1
 
 # ---- Machine Learning (CPU only) ----
+# PyTorch CPU packages must be installed via PyTorch index:
+# pip install torch==2.2.2+cpu torchvision==0.17.2+cpu torchaudio==2.2.2+cpu --index-url https://download.pytorch.org/whl/cpu
 torch==2.2.2+cpu
 torchvision==0.17.2+cpu
 torchaudio==2.2.2+cpu
---index-url https://download.pytorch.org/whl/cpu
 
 # ---- CLIP and image models ----
 open-clip-torch>=2.23.0
