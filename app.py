@@ -11,11 +11,10 @@ from contextlib import asynccontextmanager
 
 # Try to import ML dependencies, but don't fail if they're not available
 try:
-    import torch
     import faiss
     from PIL import Image
     import numpy as np
-    import open_clip
+    from utils import get_image_embedding
     ML_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"ML dependencies not available: {e}")
@@ -38,14 +37,6 @@ ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
 async def lifespan(app: FastAPI):
     # Startup
     try:
-        if ML_AVAILABLE:
-            logging.info("Loading model...")
-            global model, preprocess
-            load_model()
-            logging.info("Model loaded successfully.")
-        else:
-            logging.warning("ML dependencies not available. Skipping model loading.")
-
         logging.info("Loading pre-built index...")
         load_index()
         logging.info("Index loading completed.")
@@ -86,9 +77,6 @@ MAPPING_PATH = DATA_DIR / "image_paths.json"
 # Global variables
 index = None
 image_filenames = []
-model = None
-preprocess = None
-device = "cpu"
 
 
 def validate_image_file(file: UploadFile) -> bool:
@@ -108,37 +96,19 @@ def validate_image_file(file: UploadFile) -> bool:
     return True
 
 
-def load_model():
-    global model, preprocess
-    print("Loading model...")
-    try:
-        if not ML_AVAILABLE:
-            logging.warning("ML dependencies not available. Skipping model loading.")
-            return
-        
-        model, _, preprocess = open_clip.create_model_and_transforms(
-            "ViT-B-32", pretrained="openai"
-        )
-        logging.info("Model loaded successfully.")
-        model.eval()
-        model.to(device)
-    except Exception as e:
-        logging.exception("Error loading model")
-        # Don't raise the exception, just log it and continue
-        logging.warning("Model loading failed, but continuing startup...")
-
-
 def extract_features(image):
+    """
+    Extract features from an image using the centralized get_image_embedding function.
+    This ensures consistency between indexing and search operations.
+    """
     if not ML_AVAILABLE:
         raise ImportError("ML dependencies not available")
     
     if not hasattr(image, 'convert'):  # Check if it's a PIL Image
         raise ValueError("Image must be a PIL Image object")
     
-    image_tensor = preprocess(image).unsqueeze(0).to(device)
-    with torch.no_grad():
-        features = model.encode_image(image_tensor).squeeze().cpu().numpy()
-    return features.astype("float32")
+    # Use the same embedding function as index_images.py
+    return get_image_embedding(image)
 
 
 def load_index():

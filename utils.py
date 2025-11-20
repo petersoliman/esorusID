@@ -1,40 +1,38 @@
 import numpy as np
 from PIL import Image
-import cv2
+import torch
+import open_clip
 
-def get_image_embedding(image):
-    """Get simple image embedding using basic features"""
+# Load model once at module level for efficiency
+model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
+model.eval()
+
+def get_image_embedding(img):
+    """
+    Generate embedding for an image using OpenCLIP model.
+    
+    Args:
+        img: PIL Image object (RGB)
+        
+    Returns:
+        numpy array: Image embedding (normalized for cosine similarity)
+    """
     try:
-        # Convert PIL image to numpy array
-        img_array = np.array(image)
+        # Ensure image is in RGB mode
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
         
-        # Resize to standard size
-        img_resized = cv2.resize(img_array, (224, 224))
+        # Preprocess the image
+        image_tensor = preprocess(img).unsqueeze(0)
         
-        # Convert to grayscale and normalize
-        if len(img_resized.shape) == 3:
-            gray = cv2.cvtColor(img_resized, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = img_resized
+        # Generate embedding with no gradient computation
+        with torch.no_grad():
+            image_features = model.encode_image(image_tensor)
+            # Normalize for cosine similarity
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            return image_features.cpu().numpy().astype("float32").flatten()
             
-        # Normalize
-        gray = gray.astype(np.float32) / 255.0
-        
-        # Flatten and create a simple feature vector
-        features = gray.flatten()
-        
-        # Pad or truncate to 512 dimensions
-        if len(features) > 512:
-            features = features[:512]
-        elif len(features) < 512:
-            features = np.pad(features, (0, 512 - len(features)), 'constant')
-            
-        # Normalize the feature vector
-        features = features / np.linalg.norm(features)
-        
-        return features
-        
     except Exception as e:
         print(f"Error in image embedding: {e}")
         # Return a zero vector as fallback
-        return np.zeros(512)
+        return np.zeros(512, dtype='float32')

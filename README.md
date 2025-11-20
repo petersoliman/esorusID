@@ -19,7 +19,7 @@ Image search and recommendation engine using OpenAI's CLIP model and FAISS.
 3. **Build Index**
    Run the indexing script to process images:
    ```bash
-   python index_images.py
+   python3 index_images.py
    ```
 
 ## Running
