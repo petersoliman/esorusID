@@ -38,6 +38,12 @@
           <h2 class="card-title">Upload Your Image</h2>
         </div>
         
+        {% if error %}
+        <div class="alert alert-danger" style="background-color: #fee2e2; color: #b91c1c; padding: 1rem; margin: 1rem; border-radius: 0.5rem; text-align: center;">
+          {{ error }}
+        </div>
+        {% endif %}
+        
         <form action="/search" method="post" enctype="multipart/form-data" id="uploadForm">
           <div class="file-input-wrapper">
             <input type="file" name="file" id="fileInput" class="file-input" accept="image/*" required>

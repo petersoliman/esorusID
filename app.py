@@ -276,7 +276,7 @@ async def search(request: Request, file: UploadFile):
         logging.error(f"Search error: {e}")
         return templates.TemplateResponse("index.html", {
             "request": request,
-            "error": "An error occurred during search. Please try again."
+            "error": f"An error occurred during search: {str(e)}"
         })
 
 
