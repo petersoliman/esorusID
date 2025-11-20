@@ -184,7 +184,14 @@ async def health_check():
         "ml_available": ML_AVAILABLE,
         "indexing_available": INDEXING_AVAILABLE,
         "index_loaded": index is not None,
-        "images_count": len(image_filenames) if image_filenames else 0
+        "images_count": len(image_filenames) if image_filenames else 0,
+        "debug_info": {
+            "cwd": os.getcwd(),
+            "data_dir": str(DATA_DIR.absolute()),
+            "index_path": str(INDEX_PATH.absolute()),
+            "index_exists": INDEX_PATH.exists(),
+            "mapping_exists": MAPPING_PATH.exists()
+        }
     }
 
 
