@@ -178,7 +178,7 @@ async def home(request: Request):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Railway"""
+    """Health check endpoint for Railway, needs delete"""
     return {
         "status": "healthy",
         "ml_available": ML_AVAILABLE,
