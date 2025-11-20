@@ -25,8 +25,16 @@ MAPPING_PATH = DATA_DIR / "image_paths.json"
 def index_images():
     print("Starting image indexing...")
     
-    # Get list of image files
-    image_files = [f for f in os.listdir(RECOMMENDATION_DIR) if f.endswith((".jpg", ".png", ".jpeg"))]
+    # Get list of image files recursively
+    image_files = []
+    for root, dirs, files in os.walk(RECOMMENDATION_DIR):
+        for file in files:
+            if file.lower().endswith((".jpg", ".png", ".jpeg", ".bmp", ".webp")):
+                # Store relative path from RECOMMENDATION_DIR
+                full_path = Path(root) / file
+                rel_path = full_path.relative_to(RECOMMENDATION_DIR)
+                image_files.append(str(rel_path))
+    
     print(f"Found {len(image_files)} images to index")
     
     if not image_files:

@@ -273,7 +273,7 @@ async def search(request: Request, file: UploadFile):
         })
 
 
-@app.get("/results/{image_name}", response_class=HTMLResponse)
+@app.get("/results/{image_name:path}", response_class=HTMLResponse)
 async def show_results(request: Request, image_name: str):
     # Check if the image exists
     image_path = UPLOAD_FOLDER / image_name
@@ -285,7 +285,13 @@ async def show_results(request: Request, image_name: str):
 
 @app.get("/images", response_class=HTMLResponse)
 async def list_images(request: Request):
-    images = [f.name for f in RECOMMEND_FOLDER.iterdir() if f.is_file()]
+    images = []
+    for root, dirs, files in os.walk(RECOMMEND_FOLDER):
+        for file in files:
+            if file.lower().endswith(tuple(ALLOWED_EXTENSIONS)):
+                full_path = Path(root) / file
+                rel_path = full_path.relative_to(RECOMMEND_FOLDER)
+                images.append(str(rel_path))
     return templates.TemplateResponse("list_images.html", {"request": request, "images": images})
 
 
@@ -321,12 +327,12 @@ async def add_image(request: Request, file: UploadFile):
         return RedirectResponse(url="/images?error=Failed to add image", status_code=302)
 
 
-@app.get("/images/edit/{image_name}", response_class=HTMLResponse)
+@app.get("/images/edit/{image_name:path}", response_class=HTMLResponse)
 async def edit_image_form(request: Request, image_name: str):
     return templates.TemplateResponse("edit_image.html", {"request": request, "image": image_name})
 
 
-@app.post("/images/edit/{image_name}")
+@app.post("/images/edit/{image_name:path}")
 async def edit_image(image_name: str, file: UploadFile):
     try:
         # Validate file
@@ -352,7 +358,7 @@ async def edit_image(image_name: str, file: UploadFile):
         return RedirectResponse(url="/images?error=Failed to update image", status_code=302)
 
 
-@app.get("/images/delete/{image_name}")
+@app.get("/images/delete/{image_name:path}")
 async def delete_image(image_name: str):
     try:
         path = RECOMMEND_FOLDER / image_name
