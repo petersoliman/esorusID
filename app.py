@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -39,9 +39,9 @@ logging.basicConfig(level=logging.INFO)
 # Configuration
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
-CSS_VERSION = "1.2"
+CSS_VERSION = "1.3"
 SIMILARITY_THRESHOLD = 0.2     # min cosine similarity to include a FAISS result
-YOLO_CONF_THRESHOLD = 0.3      # min YOLO confidence to accept a detection
+YOLO_CONF_THRESHOLD = 0.2      # min YOLO confidence to accept a detection
 MAX_RESULTS_PER_OBJECT = 5
 
 # API key for the /reindex endpoint — set REINDEX_API_KEY env var to enable auth
@@ -439,6 +439,103 @@ async def delete_image(image_name: str):
     except Exception:
         logging.error("Delete image error", exc_info=True)
         return RedirectResponse(url="/images?error=Failed to delete image", status_code=302)
+
+
+@app.post("/search-crops")
+async def search_crops(request: Request):
+    """
+    Accept manually selected crop coordinates and search for similar products.
+
+    Expected JSON body:
+        {
+            "image": "uuid.jpg",          # filename inside uploads/
+            "crops": [
+                {"x1": 100, "y1": 50, "x2": 300, "y2": 200, "label": "Selection 1"},
+                ...
+            ]
+        }
+    Returns JSON with a list of result groups, same structure as multi-mode.
+    """
+    try:
+        data = await request.json()
+        image_name = data.get('image', '')
+        crops = data.get('crops', [])
+
+        if not image_name or not crops:
+            return JSONResponse({'error': 'Missing image or crops'}, status_code=400)
+
+        # Security: ensure the image is inside the uploads folder
+        image_path = UPLOAD_FOLDER / image_name
+        try:
+            image_path.resolve().relative_to(UPLOAD_FOLDER.resolve())
+        except ValueError:
+            return JSONResponse({'error': 'Invalid image path'}, status_code=400)
+
+        if not image_path.exists():
+            return JSONResponse({'error': 'Image not found'}, status_code=404)
+
+        if not ML_AVAILABLE:
+            return JSONResponse({'error': 'ML not available'}, status_code=503)
+
+        if index is None or len(image_filenames) == 0:
+            return JSONResponse({'error': 'No search index available'}, status_code=503)
+
+        img = Image.open(image_path).convert('RGB')
+        img_w, img_h = img.size
+
+        # Colors for manual selections (distinct from auto-detection colors)
+        MANUAL_COLORS = ['#E67E22', '#8E44AD', '#16A085', '#C0392B', '#2980B9', '#27AE60']
+
+        groups = []
+        for i, crop_data in enumerate(crops):
+            x1 = max(0, int(crop_data.get('x1', 0)))
+            y1 = max(0, int(crop_data.get('y1', 0)))
+            x2 = min(img_w, int(crop_data.get('x2', img_w)))
+            y2 = min(img_h, int(crop_data.get('y2', img_h)))
+
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            crop = img.crop((x1, y1, x2, y2))
+
+            try:
+                feat = extract_features(crop)
+            except Exception:
+                logging.warning("Could not embed manual crop %d", i, exc_info=True)
+                continue
+
+            D, I = _faiss_search(feat, k=10)
+            good_results = [
+                image_filenames[I[0][j]]
+                for j in range(len(I[0]))
+                if I[0][j] < len(image_filenames) and D[0][j] >= SIMILARITY_THRESHOLD
+            ][:MAX_RESULTS_PER_OBJECT]
+
+            if not good_results:
+                continue
+
+            # Save crop thumbnail
+            crop_name = f"manual_crop_{uuid.uuid4()}_{i}.jpg"
+            try:
+                crop.convert('RGB').save(UPLOAD_FOLDER / crop_name, 'JPEG')
+            except Exception:
+                logging.warning("Failed to save manual crop %d", i, exc_info=True)
+                crop_name = image_name  # fallback to original
+
+            groups.append({
+                'id': i + 1,
+                'label': crop_data.get('label', f'Selection {i + 1}'),
+                'crop_filename': crop_name,
+                'results': good_results,
+                'color': MANUAL_COLORS[i % len(MANUAL_COLORS)],
+                'bbox': [x1, y1, x2, y2],
+            })
+
+        return JSONResponse({'groups': groups})
+
+    except Exception:
+        logging.error("search-crops error", exc_info=True)
+        return JSONResponse({'error': 'Server error'}, status_code=500)
 
 
 @app.get("/reindex")

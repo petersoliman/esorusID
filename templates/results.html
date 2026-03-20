@@ -158,6 +158,47 @@
     .modal-info { margin-top: 1rem; color: white; }
     .modal-info h3 { font-size: 1.1rem; font-weight: 600; }
 
+    /* ── Manual selection canvas ── */
+    .img-canvas-wrapper {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      line-height: 0;
+    }
+    .img-canvas-wrapper canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: crosshair;
+      border-radius: 8px;
+    }
+    .selection-tip {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 0.6rem;
+      line-height: 1.4;
+    }
+    .selection-controls {
+      display: none;
+      margin-top: 0.75rem;
+      justify-content: center;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .btn-sm {
+      padding: 0.3rem 0.9rem;
+      font-size: 0.82rem;
+    }
+    .manual-results-header {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 1.5rem 0 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
     /* ── Responsive ── */
     @media (max-width: 640px) {
       .detection-body { flex-direction: column; }
@@ -200,10 +241,24 @@
         <div class="card-header">
           <div class="card-title">Detected Products</div>
         </div>
-        <img src="{{ url_for('static', path='uploads/' ~ annotated) }}"
-             alt="Annotated image"
-             class="annotated-image"
-             onclick="openFullscreen(this.src, 'Annotated — click to close')">
+        <!-- Annotated image wrapped with canvas for manual selection -->
+        <div class="img-canvas-wrapper" id="imgWrapper">
+          <img id="annotatedImg"
+               src="{{ url_for('static', path='uploads/' ~ annotated) }}"
+               alt="Annotated image"
+               class="annotated-image"
+               style="display:block;">
+          <canvas id="selectionCanvas"></canvas>
+        </div>
+        <div class="selection-tip">✏️ Click &amp; drag on the image to select any undetected products</div>
+
+        <!-- Manual selection controls (shown after first selection) -->
+        <div class="selection-controls" id="selectionControls">
+          <span id="selectionCount" style="font-size:0.88rem; font-weight:500; color:var(--text-primary);"></span>
+          <button onclick="clearSelections()" class="btn btn-secondary btn-sm">🗑 Clear</button>
+          <button onclick="searchManual()" class="btn btn-primary btn-sm" id="searchManualBtn">🔍 Search Selected</button>
+        </div>
+
         <!-- Legend -->
         <div style="display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center; margin-top:0.75rem; padding-bottom:0.5rem;">
           {% for det in detections %}
@@ -294,6 +349,9 @@
       </div>
       {% endfor %}
 
+      <!-- Manual selection results injected here by JS -->
+      <div id="manualResults"></div>
+
       <!-- Action buttons -->
       <div class="action-section">
         <div class="action-buttons">
@@ -317,6 +375,7 @@
   </div>
 
   <script>
+    /* ── Fullscreen modal ── */
     function openFullscreen(src, title) {
       document.getElementById('fullscreenImage').src = src;
       document.getElementById('modalTitle').textContent = title;
@@ -328,6 +387,261 @@
       document.body.style.overflow = 'auto';
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFullscreen(); });
+
+    /* ── Manual selection canvas ── */
+    const MANUAL_COLORS = ['#E67E22', '#8E44AD', '#16A085', '#C0392B', '#2980B9', '#27AE60'];
+    const UPLOADED_IMAGE = '{{ uploaded }}';
+
+    let isDrawing = false;
+    let startX = 0, startY = 0;
+    let selections = [];
+    let scaleX = 1, scaleY = 1;
+
+    const annotatedImg = document.getElementById('annotatedImg');
+    const canvas       = document.getElementById('selectionCanvas');
+    const ctx          = canvas ? canvas.getContext('2d') : null;
+
+    function syncCanvas() {
+      if (!annotatedImg || !canvas) return;
+      canvas.width  = annotatedImg.clientWidth;
+      canvas.height = annotatedImg.clientHeight;
+      scaleX = annotatedImg.naturalWidth  / annotatedImg.clientWidth;
+      scaleY = annotatedImg.naturalHeight / annotatedImg.clientHeight;
+      redrawCanvas();
+    }
+
+    function redrawCanvas() {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (selections.length === 0) {
+        /* subtle instruction banner */
+        ctx.fillStyle = 'rgba(0,0,0,0.38)';
+        ctx.fillRect(0, 0, canvas.width, 26);
+        ctx.fillStyle = '#fff';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.fillText('✏️  Drag to select an undetected product', 10, 17);
+      }
+
+      selections.forEach((sel, i) => {
+        const color = MANUAL_COLORS[i % MANUAL_COLORS.length];
+        const bw = sel.x2 - sel.x1, bh = sel.y2 - sel.y1;
+        ctx.setLineDash([7, 3]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(sel.x1, sel.y1, bw, bh);
+        ctx.fillStyle = color + '28';
+        ctx.fillRect(sel.x1, sel.y1, bw, bh);
+        ctx.setLineDash([]);
+        const tag = `#${i + 1}`;
+        const tagW = ctx.measureText(tag).width + 14;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.roundRect(sel.x1, sel.y1, tagW, 22, 4);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px Inter, sans-serif';
+        ctx.fillText(tag, sel.x1 + 7, sel.y1 + 15);
+      });
+    }
+
+    function canvasPos(e) {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+
+    if (canvas) {
+      canvas.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        const p = canvasPos(e);
+        isDrawing = true; startX = p.x; startY = p.y;
+      });
+
+      canvas.addEventListener('mousemove', e => {
+        if (!isDrawing) return;
+        const p = canvasPos(e);
+        redrawCanvas();
+        const color = MANUAL_COLORS[selections.length % MANUAL_COLORS.length];
+        ctx.setLineDash([5, 3]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(startX, startY, p.x - startX, p.y - startY);
+        ctx.fillStyle = color + '22';
+        ctx.fillRect(startX, startY, p.x - startX, p.y - startY);
+        ctx.setLineDash([]);
+      });
+
+      canvas.addEventListener('mouseup', e => {
+        if (!isDrawing) return;
+        isDrawing = false;
+        const p = canvasPos(e);
+        const x1 = Math.min(startX, p.x), y1 = Math.min(startY, p.y);
+        const x2 = Math.max(startX, p.x), y2 = Math.max(startY, p.y);
+        if ((x2 - x1) >= 20 && (y2 - y1) >= 20) {
+          selections.push({ x1, y1, x2, y2 });
+          updateControls();
+        }
+        redrawCanvas();
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        if (isDrawing) { isDrawing = false; redrawCanvas(); }
+      });
+
+      /* Touch support */
+      canvas.addEventListener('touchstart', e => {
+        e.preventDefault();
+        const t = e.touches[0];
+        const r = canvas.getBoundingClientRect();
+        isDrawing = true;
+        startX = t.clientX - r.left;
+        startY = t.clientY - r.top;
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (!isDrawing) return;
+        const t = e.touches[0];
+        const r = canvas.getBoundingClientRect();
+        const p = { x: t.clientX - r.left, y: t.clientY - r.top };
+        redrawCanvas();
+        const color = MANUAL_COLORS[selections.length % MANUAL_COLORS.length];
+        ctx.setLineDash([5, 3]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(startX, startY, p.x - startX, p.y - startY);
+        ctx.setLineDash([]);
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', e => {
+        e.preventDefault();
+        if (!isDrawing) return;
+        isDrawing = false;
+        const t = e.changedTouches[0];
+        const r = canvas.getBoundingClientRect();
+        const p = { x: t.clientX - r.left, y: t.clientY - r.top };
+        const x1 = Math.min(startX, p.x), y1 = Math.min(startY, p.y);
+        const x2 = Math.max(startX, p.x), y2 = Math.max(startY, p.y);
+        if ((x2 - x1) >= 20 && (y2 - y1) >= 20) {
+          selections.push({ x1, y1, x2, y2 });
+          updateControls();
+        }
+        redrawCanvas();
+      }, { passive: false });
+    }
+
+    function updateControls() {
+      const ctrl = document.getElementById('selectionControls');
+      const cnt  = document.getElementById('selectionCount');
+      if (!ctrl) return;
+      ctrl.style.display = selections.length > 0 ? 'flex' : 'none';
+      if (cnt) cnt.textContent = `${selections.length} area${selections.length !== 1 ? 's' : ''} selected`;
+    }
+
+    function clearSelections() {
+      selections = [];
+      updateControls();
+      redrawCanvas();
+      document.getElementById('manualResults').innerHTML = '';
+    }
+
+    async function searchManual() {
+      const btn = document.getElementById('searchManualBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Searching…';
+
+      const scaledCrops = selections.map((s, i) => ({
+        x1: Math.round(s.x1 * scaleX),
+        y1: Math.round(s.y1 * scaleY),
+        x2: Math.round(s.x2 * scaleX),
+        y2: Math.round(s.y2 * scaleY),
+        label: `Manual Selection ${i + 1}`,
+      }));
+
+      try {
+        const res  = await fetch('/search-crops', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: UPLOADED_IMAGE, crops: scaledCrops }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          showManualError(data.error);
+        } else {
+          renderManualResults(data.groups);
+        }
+      } catch (err) {
+        showManualError('Search failed. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Search Selected';
+      }
+    }
+
+    function showManualError(msg) {
+      document.getElementById('manualResults').innerHTML =
+        `<div class="empty-state" style="margin-top:1rem;"><p>${msg}</p></div>`;
+    }
+
+    function renderManualResults(groups) {
+      const container = document.getElementById('manualResults');
+      if (!groups || groups.length === 0) {
+        showManualError('No similar products found for the selected areas. Try selecting a larger or different region.');
+        return;
+      }
+
+      let html = `<div style="margin-top:1.5rem;">
+        <div class="manual-results-header">✏️ Manual Selection Results <span style="font-size:0.8rem;font-weight:400;color:var(--text-secondary);">(${groups.length} area${groups.length !== 1 ? 's' : ''})</span></div>`;
+
+      groups.forEach(g => {
+        const n = g.results.length;
+        html += `
+        <div class="detection-group" style="border-color:${g.color}55;">
+          <div class="detection-header" style="background:${g.color}12;">
+            <span class="detection-badge" style="background:${g.color};">✏</span>
+            <span class="detection-label">${g.label}</span>
+            <span class="detection-confidence" style="color:${g.color};font-weight:600;">Manual</span>
+          </div>
+          <div class="detection-body">
+            <div class="detection-crop">
+              <img src="/static/uploads/${g.crop_filename}" alt="${g.label}"
+                   onclick="openFullscreen(this.src,'${g.label}')"
+                   style="width:110px;height:110px;object-fit:cover;border-radius:6px;border:2px solid ${g.color};cursor:pointer;">
+              <div class="detection-crop-label">Selected</div>
+            </div>
+            <div style="display:flex;align-items:center;color:var(--text-secondary);font-size:1.5rem;padding-top:40px;">→</div>
+            <div class="detection-results">
+              <div class="detection-results-label">${n} similar product${n !== 1 ? 's' : ''} found</div>
+              <div class="detection-results-grid">
+                ${g.results.map((name, idx) => `
+                <div class="detection-result-card">
+                  <img src="/static/recommendations/${name}" alt="${name}"
+                       onclick="openFullscreen(this.src,'${name}')">
+                  <div class="detection-result-info">
+                    <div class="detection-result-rank">#${idx + 1}</div>
+                    <div class="detection-result-name">${name}</div>
+                  </div>
+                </div>`).join('')}
+              </div>
+            </div>
+          </div>
+        </div>`;
+      });
+
+      html += '</div>';
+      container.innerHTML = html;
+      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    /* Init canvas once image is ready */
+    if (annotatedImg) {
+      if (annotatedImg.complete && annotatedImg.naturalWidth) {
+        syncCanvas();
+      } else {
+        annotatedImg.addEventListener('load', syncCanvas);
+      }
+      window.addEventListener('resize', syncCanvas);
+    }
   </script>
 </body>
 </html>
