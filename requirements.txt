@@ -25,8 +25,7 @@ timm>=0.9.12
 faiss-cpu>=1.13.0
 
 # ---- Object detection ----
-ultralytics>=8.0.0
-inference-sdk>=0.9.0       # Roboflow hosted inference (set ROBOFLOW_API_KEY + ROBOFLOW_MODEL_ID)
+ultralytics>=8.0.0         # includes YOLOWorld for local open-vocabulary furniture detection
 
 # ---- Web / Utils ----
 python-multipart>=0.0.6

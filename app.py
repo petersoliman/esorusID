@@ -41,7 +41,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
 CSS_VERSION = "1.3"
 SIMILARITY_THRESHOLD = 0.2     # min cosine similarity to include a FAISS result
-YOLO_CONF_THRESHOLD = 0.2      # min YOLO confidence to accept a detection
+YOLO_CONF_THRESHOLD = 0.1      # min YOLO confidence to accept a detection
 MAX_RESULTS_PER_OBJECT = 5
 
 # API key for the /reindex endpoint — set REINDEX_API_KEY env var to enable auth

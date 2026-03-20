@@ -3,16 +3,10 @@ import os
 from PIL import Image, ImageDraw
 
 try:
-    from ultralytics import YOLO
+    from ultralytics import YOLOWorld
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
-
-try:
-    from inference_sdk import InferenceHTTPClient
-    ROBOFLOW_AVAILABLE = True
-except ImportError:
-    ROBOFLOW_AVAILABLE = False
 
 # Colors for bounding boxes (one per detected object, cycling)
 DETECTION_COLORS = [
@@ -20,44 +14,32 @@ DETECTION_COLORS = [
     '#FFEAA7', '#DDA0DD', '#FF8C42', '#A8E6CF',
 ]
 
-# Roboflow config — set these in your .env or environment
-ROBOFLOW_API_KEY = os.environ.get('ROBOFLOW_API_KEY', '')
-ROBOFLOW_MODEL_ID = os.environ.get('ROBOFLOW_MODEL_ID', 'furniture-detection/2')
+# Furniture classes for YOLOWorld — covers common interior items
+FURNITURE_CLASSES = [
+    "chair", "armchair", "sofa", "couch", "loveseat",
+    "dining table", "coffee table", "side table", "end table", "console table",
+    "desk", "writing desk", "office desk",
+    "floor lamp", "table lamp", "pendant lamp", "chandelier",
+    "bed", "headboard", "nightstand", "dresser", "wardrobe", "cabinet",
+    "bookshelf", "bookcase", "shelf", "tv stand", "media console",
+    "ottoman", "footstool", "bench", "stool", "bar stool",
+    "rug", "carpet", "curtain", "mirror", "artwork", "plant",
+]
 
 _yolo_model = None
-_roboflow_client = None
 
 
 def _get_yolo():
-    """Lazy-load YOLOv8l model (downloads weights on first call)."""
+    """Lazy-load YOLOWorld model (downloads weights on first call)."""
     global _yolo_model
     if _yolo_model is None:
         if not YOLO_AVAILABLE:
             raise ImportError("ultralytics is not installed")
-        logging.info("Loading YOLOv8l model...")
-        _yolo_model = YOLO('yolov8l.pt')
-        logging.info("YOLOv8l model loaded.")
+        logging.info("Loading YOLOWorld model...")
+        _yolo_model = YOLOWorld('yolov8x-worldv2.pt')
+        _yolo_model.set_classes(FURNITURE_CLASSES)
+        logging.info("YOLOWorld model loaded with %d furniture classes.", len(FURNITURE_CLASSES))
     return _yolo_model
-
-
-def _get_roboflow_client():
-    """Lazy-load Roboflow inference client (only if API key is set)."""
-    global _roboflow_client
-    if _roboflow_client is None:
-        if not ROBOFLOW_AVAILABLE:
-            return None
-        if not ROBOFLOW_API_KEY:
-            return None
-        try:
-            _roboflow_client = InferenceHTTPClient(
-                api_url="https://detect.roboflow.com",
-                api_key=ROBOFLOW_API_KEY,
-            )
-            logging.info("Roboflow client initialized (model: %s).", ROBOFLOW_MODEL_ID)
-        except Exception as e:
-            logging.warning("Failed to init Roboflow client: %s", e)
-            return None
-    return _roboflow_client
 
 
 def _compute_iou(b1, b2):
@@ -75,11 +57,9 @@ def _compute_iou(b1, b2):
     return inter / union if union > 0 else 0.0
 
 
-def detect_products(image: Image.Image, conf_threshold: float = 0.2) -> list:
+def detect_products(image: Image.Image, conf_threshold: float = 0.1) -> list:
     """
-    Detect furniture objects in a PIL image.
-    Uses YOLOv8l (COCO classes) + Roboflow furniture model (if ROBOFLOW_API_KEY is set).
-    Deduplicates overlapping boxes from both models via IoU.
+    Detect furniture objects in a PIL image using YOLOWorld (fully local, no API).
 
     Returns a list of dicts:
         {
@@ -87,16 +67,15 @@ def detect_products(image: Image.Image, conf_threshold: float = 0.2) -> list:
             'confidence': float,
             'bbox':       (x1, y1, x2, y2),
             'crop':       PIL.Image,
-            'source':     str,   # 'yolo' or 'roboflow'
+            'source':     str,   # always 'yoloworld'
         }
     """
     w, h = image.size
     detections = []
 
-    # ── YOLOv8l ───────────────────────────────────────────────────────────────
     try:
         model = _get_yolo()
-        results = model(image, conf=conf_threshold, verbose=False)
+        results = model.predict(image, conf=conf_threshold, verbose=False)
         for r in results:
             for box in r.boxes:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -112,56 +91,18 @@ def detect_products(image: Image.Image, conf_threshold: float = 0.2) -> list:
                     'confidence': confidence,
                     'bbox': (x1, y1, x2, y2),
                     'crop': crop,
-                    'source': 'yolo',
+                    'source': 'yoloworld',
                 })
     except Exception as e:
-        logging.error("YOLOv8 detection failed: %s", e, exc_info=True)
+        logging.error("YOLOWorld detection failed: %s", e, exc_info=True)
 
-    # ── Roboflow furniture model ───────────────────────────────────────────────
-    try:
-        client = _get_roboflow_client()
-        if client:
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-                image.save(tmp.name, 'JPEG')
-                tmp_path = tmp.name
-            try:
-                rf_result = client.infer(tmp_path, model_id=ROBOFLOW_MODEL_ID)
-            finally:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+    # Deduplicate heavily overlapping boxes (IoU > 0.5)
+    deduped = []
+    for det in detections:
+        if not any(_compute_iou(det['bbox'], d['bbox']) > 0.5 for d in deduped):
+            deduped.append(det)
 
-            for pred in rf_result.get('predictions', []):
-                label = pred['class']
-                confidence = pred['confidence']
-                if confidence < conf_threshold:
-                    continue
-                cx, cy = pred['x'], pred['y']
-                bw, bh = pred['width'], pred['height']
-                x1 = max(0, int(cx - bw / 2))
-                y1 = max(0, int(cy - bh / 2))
-                x2 = min(w, int(cx + bw / 2))
-                y2 = min(h, int(cy + bh / 2))
-                if x2 <= x1 or y2 <= y1:
-                    continue
-                bbox = (x1, y1, x2, y2)
-                # Skip if it significantly overlaps an existing detection
-                if any(_compute_iou(bbox, d['bbox']) > 0.5 for d in detections):
-                    continue
-                crop = image.crop(bbox)
-                detections.append({
-                    'label': label,
-                    'confidence': confidence,
-                    'bbox': bbox,
-                    'crop': crop,
-                    'source': 'roboflow',
-                })
-    except Exception as e:
-        logging.warning("Roboflow detection skipped: %s", e)
-
-    return detections
+    return deduped
 
 
 def draw_annotations(image: Image.Image, matched_detections: list) -> Image.Image:
