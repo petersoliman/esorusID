@@ -309,7 +309,7 @@
         </div>
 
         <!-- Legend -->
-        <div style="display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center; margin-top:0.75rem; padding-bottom:0.5rem;">
+        <div id="detectionLegend" style="display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center; margin-top:0.75rem; padding-bottom:0.5rem;">
           {% for det in detections %}
           <span style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.8rem; background:{{ det.color }}18; border:1px solid {{ det.color }}; border-radius:20px; padding:0.2rem 0.6rem;">
             <span style="width:10px; height:10px; border-radius:50%; background:{{ det.color }}; display:inline-block;"></span>
@@ -667,6 +667,18 @@
         showManualError('No similar products found for the selected areas. Try selecting a larger or different region.');
         return;
       }
+
+      // Add manual selections to the legend under the annotated image
+      const legend = document.getElementById('detectionLegend');
+      if (legend) {
+        groups.forEach(g => {
+          const tag = document.createElement('span');
+          tag.style.cssText = `display:inline-flex;align-items:center;gap:0.4rem;font-size:0.8rem;background:${g.color}18;border:1px solid ${g.color};border-radius:20px;padding:0.2rem 0.6rem;`;
+          tag.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:${g.color};display:inline-block;"></span> ✏️ ${g.label}`;
+          legend.appendChild(tag);
+        });
+      }
+
       let html = `<div style="margin-top:1.5rem;">
         <div class="manual-results-header">✏️ Manual Selection Results
           <span style="font-size:0.8rem;font-weight:400;color:var(--text-secondary);">(${groups.length} area${groups.length > 1 ? 's' : ''})</span>
