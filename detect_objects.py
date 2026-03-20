@@ -87,6 +87,9 @@ def detect_products(image: Image.Image, conf_threshold: float = 0.1) -> list:
                     continue
                 label = r.names[int(box.cls[0])]
                 confidence = float(box.conf[0])
+                # Hard filter: skip anything not in our furniture classes
+                if label.lower() not in [c.lower() for c in FURNITURE_CLASSES]:
+                    continue
                 crop = image.crop((x1, y1, x2, y2))
                 detections.append({
                     'label': label,
