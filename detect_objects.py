@@ -14,16 +14,18 @@ DETECTION_COLORS = [
     '#FFEAA7', '#DDA0DD', '#FF8C42', '#A8E6CF',
 ]
 
-# Furniture classes for YOLOWorld — covers common interior items
+# Furniture classes for YOLOWorld — strictly interior furniture items only
 FURNITURE_CLASSES = [
-    "chair", "armchair", "sofa", "couch", "loveseat",
+    "chair", "armchair", "accent chair",
+    "sofa", "couch", "loveseat", "sectional sofa",
     "dining table", "coffee table", "side table", "end table", "console table",
-    "desk", "writing desk", "office desk",
-    "floor lamp", "table lamp", "pendant lamp", "chandelier",
-    "bed", "headboard", "nightstand", "dresser", "wardrobe", "cabinet",
-    "bookshelf", "bookcase", "shelf", "tv stand", "media console",
-    "ottoman", "footstool", "bench", "stool", "bar stool",
-    "rug", "carpet", "curtain", "mirror", "artwork", "plant",
+    "desk", "writing desk",
+    "floor lamp", "table lamp", "chandelier",
+    "bed", "nightstand", "dresser", "wardrobe", "cabinet",
+    "bookshelf", "bookcase", "shelf",
+    "tv stand", "media console",
+    "ottoman", "footstool", "bench", "bar stool",
+    "rug",
 ]
 
 _yolo_model = None
