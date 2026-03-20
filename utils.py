@@ -1,4 +1,3 @@
-import numpy as np
 from PIL import Image
 import torch
 import open_clip
@@ -10,29 +9,22 @@ model.eval()
 def get_image_embedding(img):
     """
     Generate embedding for an image using OpenCLIP model.
-    
+
     Args:
         img: PIL Image object (RGB)
-        
+
     Returns:
         numpy array: Image embedding (normalized for cosine similarity)
+
+    Raises:
+        Exception: propagated directly so callers can handle failures explicitly
     """
-    try:
-        # Ensure image is in RGB mode
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        # Preprocess the image
-        image_tensor = preprocess(img).unsqueeze(0)
-        
-        # Generate embedding with no gradient computation
-        with torch.no_grad():
-            image_features = model.encode_image(image_tensor)
-            # Normalize for cosine similarity
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-            return image_features.cpu().numpy().astype("float32").flatten()
-            
-    except Exception as e:
-        print(f"Error in image embedding: {e}")
-        # Return a zero vector as fallback
-        return np.zeros(512, dtype='float32')
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+
+    image_tensor = preprocess(img).unsqueeze(0)
+
+    with torch.no_grad():
+        image_features = model.encode_image(image_tensor)
+        image_features /= image_features.norm(dim=-1, keepdim=True)
+        return image_features.cpu().numpy().astype("float32").flatten()

@@ -4,8 +4,168 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Search Results - Esorus</title>
-  <link rel="stylesheet" href="/static/style.css?v={{ range(1, 1000) | random }}">
+  <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ── Multi-product results layout ── */
+    .annotated-section {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .annotated-image {
+      max-width: 100%;
+      max-height: 480px;
+      border-radius: 8px;
+      box-shadow: var(--shadow-lg);
+      border: 2px solid var(--border-color);
+      object-fit: contain;
+    }
+    .detection-group {
+      background: var(--surface-color);
+      border-radius: 10px;
+      border: 2px solid var(--border-color);
+      box-shadow: var(--shadow-md);
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+    .detection-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .detection-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: white;
+      flex-shrink: 0;
+    }
+    .detection-label {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      text-transform: capitalize;
+    }
+    .detection-confidence {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-left: auto;
+    }
+    .detection-body {
+      display: flex;
+      gap: 1rem;
+      padding: 1rem;
+      align-items: flex-start;
+    }
+    .detection-crop {
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .detection-crop img {
+      width: 110px;
+      height: 110px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 2px solid var(--border-color);
+      cursor: pointer;
+    }
+    .detection-crop-label {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-top: 0.3rem;
+    }
+    .detection-results {
+      flex: 1;
+      min-width: 0;
+    }
+    .detection-results-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    .detection-results-grid {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .detection-result-card {
+      background: var(--background-color);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      transition: all 0.2s ease;
+      width: 120px;
+      flex-shrink: 0;
+    }
+    .detection-result-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    .detection-result-card img {
+      width: 120px;
+      height: 120px;
+      object-fit: cover;
+      cursor: pointer;
+      display: block;
+    }
+    .detection-result-info {
+      padding: 0.4rem 0.5rem;
+    }
+    .detection-result-rank {
+      font-size: 0.7rem;
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    .detection-result-name {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Fullscreen modal ── */
+    .fullscreen-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+    }
+    .modal-content {
+      max-width: 90%;
+      max-height: 90%;
+      text-align: center;
+    }
+    .modal-content img {
+      max-width: 100%;
+      max-height: 80vh;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .modal-info { margin-top: 1rem; color: white; }
+    .modal-info h3 { font-size: 1.1rem; font-weight: 600; }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      .detection-body { flex-direction: column; }
+      .detection-crop img { width: 80px; height: 80px; }
+      .detection-result-card { width: 90px; }
+      .detection-result-card img { width: 90px; height: 90px; }
+    }
+  </style>
 </head>
 <body>
   <!-- Header -->
@@ -23,60 +183,126 @@
     </div>
   </header>
 
-  <!-- Main Content -->
   <main class="main-content">
     <div class="container">
-      <!-- Original Search Image -->
-      <div class="original-image-section">
+
+      <!-- ── Page title ── -->
+      <div class="page-header">
         <h1 class="page-title">Search Results</h1>
-        <div class="original-image-container">
-          <h2 class="section-title">Your Search Image</h2>
-          <div class="original-image-wrapper">
-            <img src="{{ url_for('static', path='uploads/' ~ uploaded) }}" alt="Search image" class="original-image">
-          </div>
-        </div>
+        {% if multi_mode and detections %}
+          <p class="page-subtitle">Found {{ detections|length }} product{{ 's' if detections|length != 1 else '' }} — showing up to {{ detections[0].results|length }} similar items each</p>
+        {% endif %}
       </div>
 
-      <!-- Results Section -->
-      {% if results %}
-      <div class="results-section">
-        <h2 class="section-title">We found {{ results|length }} products in our database</h2>
-        <div class="image-grid">
-          {% for image in results %}
-          <div class="image-card">
-            <div class="result-image" data-image-src="{{ url_for('static', path='recommendations/' ~ image) }}" data-image-title="{{ image }}">
-              <img src="{{ url_for('static', path='recommendations/' ~ image) }}" alt="{{ image }}">
-            </div>
-            <div class="image-card-content">
-              <div class="image-card-title">{{ image }}</div>
-              <div class="image-card-rank">Rank: {{ loop.index }}</div>
-            </div>
-          </div>
+      <!-- ── Annotated image (multi-mode) ── -->
+      {% if multi_mode and detections %}
+      <div class="card annotated-section">
+        <div class="card-header">
+          <div class="card-title">Detected Products</div>
+        </div>
+        <img src="{{ url_for('static', path='uploads/' ~ annotated) }}"
+             alt="Annotated image"
+             class="annotated-image"
+             onclick="openFullscreen(this.src, 'Annotated — click to close')">
+        <!-- Legend -->
+        <div style="display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center; margin-top:0.75rem; padding-bottom:0.5rem;">
+          {% for det in detections %}
+          <span style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.8rem; background:{{ det.color }}18; border:1px solid {{ det.color }}; border-radius:20px; padding:0.2rem 0.6rem;">
+            <span style="width:10px; height:10px; border-radius:50%; background:{{ det.color }}; display:inline-block;"></span>
+            {{ det.id }}. {{ det.label }}
+          </span>
           {% endfor %}
         </div>
       </div>
-      {% else %}
-      <div class="no-results-section">
-        <h2 class="section-title">No Similar Images Found</h2>
+      {% endif %}
+
+      <!-- ── Single-image mode: original image ── -->
+      {% if not multi_mode %}
+      <div class="card original-image-section" style="margin-bottom:1.5rem;">
+        <div class="card-header">
+          <div class="card-title">Your Search Image</div>
+        </div>
+        <div style="text-align:center; padding:0.5rem 0 1rem;">
+          <img src="{{ url_for('static', path='uploads/' ~ uploaded) }}"
+               alt="Search image"
+               class="original-image"
+               onclick="openFullscreen(this.src, 'Your uploaded image')">
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- ── No results at all ── -->
+      {% if not detections %}
+      <div class="empty-state">
+        <h3>No Products Found</h3>
         {% if message %}
-        <p class="text-secondary">{{ message }}</p>
+        <p>{{ message }}</p>
         {% else %}
-        <p class="text-secondary">We couldn't find any similar images in our collection. Try uploading a different image or add more images to our recommendation database.</p>
+        <p>No similar products were found in the database. Try a different image or add more images via <a href="/images">Manage Images</a>.</p>
         {% endif %}
-        <div class="action-buttons">
+        <div class="action-buttons" style="margin-top:1rem;">
           <a href="/" class="btn btn-primary">Try New Search</a>
+          <a href="/images" class="btn btn-secondary">Manage Images</a>
+        </div>
+      </div>
+
+      {% else %}
+      <!-- ── Detection groups ── -->
+      {% for det in detections %}
+      <div class="detection-group">
+        <!-- Group header -->
+        <div class="detection-header">
+          <span class="detection-badge" style="background: {{ det.color }};">{{ det.id }}</span>
+          <span class="detection-label">{{ det.label }}</span>
+          {% if det.confidence < 1.0 %}
+          <span class="detection-confidence">{{ "%.0f"|format(det.confidence * 100) }}% confidence</span>
+          {% endif %}
+        </div>
+
+        <!-- Crop + results -->
+        <div class="detection-body">
+          <!-- Detected crop -->
+          <div class="detection-crop">
+            <img src="{{ url_for('static', path='uploads/' ~ det.crop_filename) }}"
+                 alt="{{ det.label }} crop"
+                 onclick="openFullscreen(this.src, '{{ det.label }} (detected)')"
+                 style="border-color: {{ det.color }};">
+            <div class="detection-crop-label">Detected</div>
+          </div>
+
+          <!-- Arrow separator -->
+          <div style="display:flex; align-items:center; color:var(--text-secondary); font-size:1.5rem; padding-top:40px;">→</div>
+
+          <!-- Similar products -->
+          <div class="detection-results">
+            <div class="detection-results-label">{{ det.results|length }} similar product{{ 's' if det.results|length != 1 else '' }} found</div>
+            <div class="detection-results-grid">
+              {% for img_name in det.results %}
+              <div class="detection-result-card">
+                <img src="{{ url_for('static', path='recommendations/' ~ img_name) }}"
+                     alt="{{ img_name }}"
+                     onclick="openFullscreen(this.src, '{{ img_name }}')">
+                <div class="detection-result-info">
+                  <div class="detection-result-rank">#{{ loop.index }}</div>
+                  <div class="detection-result-name">{{ img_name }}</div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <!-- Action buttons -->
+      <div class="action-section">
+        <div class="action-buttons">
+          <a href="/" class="btn btn-primary">New Search</a>
           <a href="/images" class="btn btn-secondary">Manage Images</a>
         </div>
       </div>
       {% endif %}
 
-      <!-- Action Buttons -->
-      {% if results %}
-      <div class="action-section">
-        <a href="/" class="btn btn-primary">New Search</a>
-        <a href="/images" class="btn btn-secondary">Manage Images</a>
-      </div>
-      {% endif %}
     </div>
   </main>
 
@@ -91,41 +317,17 @@
   </div>
 
   <script>
-    // Add click event listeners to all result images
-    document.addEventListener('DOMContentLoaded', function() {
-      const resultImages = document.querySelectorAll('.result-image');
-      resultImages.forEach(function(element) {
-        element.addEventListener('click', function() {
-          const imageSrc = this.getAttribute('data-image-src');
-          const imageTitle = this.getAttribute('data-image-title');
-          openFullscreen(imageSrc, imageTitle);
-        });
-      });
-    });
-
-    function openFullscreen(imageSrc, imageTitle) {
-      const modal = document.getElementById('fullscreenModal');
-      const modalImage = document.getElementById('fullscreenImage');
-      const modalTitle = document.getElementById('modalTitle');
-      
-      modalImage.src = imageSrc;
-      modalTitle.textContent = imageTitle;
-      modal.style.display = 'flex';
-      document.body.style.overflow = 'hidden'; // Prevent scrolling
+    function openFullscreen(src, title) {
+      document.getElementById('fullscreenImage').src = src;
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('fullscreenModal').style.display = 'flex';
+      document.body.style.overflow = 'hidden';
     }
-
     function closeFullscreen() {
-      const modal = document.getElementById('fullscreenModal');
-      modal.style.display = 'none';
-      document.body.style.overflow = 'auto'; // Restore scrolling
+      document.getElementById('fullscreenModal').style.display = 'none';
+      document.body.style.overflow = 'auto';
     }
-
-    // Close modal with Escape key
-    document.addEventListener('keydown', function(event) {
-      if (event.key === 'Escape') {
-        closeFullscreen();
-      }
-    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFullscreen(); });
   </script>
 </body>
-</html> 
+</html>

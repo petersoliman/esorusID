@@ -72,7 +72,7 @@ def index_images():
     if embeddings:
         print(f"Creating FAISS index with {len(embeddings)} images...")
         features_array = np.vstack(embeddings)
-        index = faiss.IndexFlatL2(features_array.shape[1])
+        index = faiss.IndexFlatIP(features_array.shape[1])  # inner product = cosine sim on normalized vecs
         index.add(features_array.astype("float32"))
 
         DATA_DIR.mkdir(parents=True, exist_ok=True)

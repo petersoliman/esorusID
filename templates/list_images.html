@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manage Images - Esorus</title>
-  <link rel="stylesheet" href="/static/style.css?v={{ range(1, 1000) | random }}">
+  <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -52,7 +52,9 @@
           <div class="image-card-content">
             <div class="image-card-title">{{ image }}</div>
             <div class="image-card-actions">
-              <a href="/images/delete/{{ image }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this image?')">Delete</a>
+              <form method="post" action="/images/delete/{{ image }}" onsubmit="return confirm('Are you sure you want to delete this image?')" style="display:inline;">
+                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+              </form>
             </div>
           </div>
         </div>
