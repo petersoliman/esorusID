@@ -1,8 +1,8 @@
 # Ignore uploaded temp files
 static/uploads/*
 
-# Recommendation images are tracked (they are the product catalog)
-# static/recommendations/*
+# Ignore recommendation images (large product catalog, managed separately)
+static/recommendations/*
 
 # Ignore Python cache and compiled files
 __pycache__/
@@ -24,3 +24,6 @@ env/
 
 # Ignore YOLO model weights (large binary files, downloaded automatically)
 *.pt
+
+# Ignore FAISS index and data directory (generated per-server from local images)
+data/
