@@ -159,8 +159,9 @@ def load_index():
 
 def _template(name: str, request: Request, **kwargs):
     return templates.TemplateResponse(
-        name, {"request": request, "css_version": CSS_VERSION,
-               "detection_colors": DETECTION_COLORS if DETECTION_AVAILABLE else [], **kwargs}
+        request, name,
+        {"css_version": CSS_VERSION,
+         "detection_colors": DETECTION_COLORS if DETECTION_AVAILABLE else [], **kwargs}
     )
 
 

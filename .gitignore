@@ -1,8 +1,8 @@
 # Ignore uploaded temp files
 static/uploads/*
 
-# Ignore recommendation images (they are large and can be regenerated)
-static/recommendations/*
+# Recommendation images are tracked (they are the product catalog)
+# static/recommendations/*
 
 # Ignore Python cache and compiled files
 __pycache__/
@@ -18,3 +18,9 @@ env/
 
 # Ignore macOS system files recursively
 **/.DS_Store
+
+# Ignore Claude desktop app config
+.claude/
+
+# Ignore YOLO model weights (large binary files, downloaded automatically)
+*.pt
