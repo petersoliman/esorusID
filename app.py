@@ -1,8 +1,9 @@
-from fastapi import FastAPI, Request, UploadFile, HTTPException
+from fastapi import FastAPI, Request, UploadFile, HTTPException, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
+from typing import List
 import os
 import uuid
 import logging
@@ -159,8 +160,8 @@ def load_index():
 
 def _template(name: str, request: Request, **kwargs):
     return templates.TemplateResponse(
-        request, name,
-        {"css_version": CSS_VERSION,
+        name,
+        {"request": request, "css_version": CSS_VERSION,
          "detection_colors": DETECTION_COLORS if DETECTION_AVAILABLE else [], **kwargs}
     )
 
@@ -360,12 +361,40 @@ async def list_images(request: Request):
                 full_path = Path(root) / file
                 rel_path = full_path.relative_to(RECOMMEND_FOLDER)
                 images.append(str(rel_path))
-    return _template("list_images.html", request, images=images)
+    return _template("list_images.html", request, images=images,
+                    index_loaded=index is not None, images_indexed=len(image_filenames))
 
 
-@app.get("/images/add", response_class=HTMLResponse)
-async def add_image_form(request: Request):
-    return _template("add_image.html", request)
+@app.post("/images/bulk-add")
+async def bulk_add_images(files: List[UploadFile] = File(...)):
+    added = []
+    errors = []
+
+    for file in files:
+        try:
+            if not validate_image_file(file):
+                errors.append({"filename": file.filename, "error": "Invalid file type or size"})
+                continue
+
+            contents = await file.read()
+
+            if len(contents) > MAX_FILE_SIZE:
+                errors.append({"filename": file.filename, "error": "File too large"})
+                continue
+
+            ext = Path(file.filename).suffix.lstrip(".")
+            name = f"{uuid.uuid4()}.{ext}"
+            path = RECOMMEND_FOLDER / name
+
+            with open(path, "wb") as f:
+                f.write(contents)
+
+            added.append(name)
+        except Exception as e:
+            logging.error(f"Error processing {file.filename}: {e}")
+            errors.append({"filename": file.filename, "error": str(e)})
+
+    return JSONResponse({"added": added, "errors": errors})
 
 
 @app.post("/images/add")
@@ -393,37 +422,20 @@ async def add_image(request: Request, file: UploadFile):
         return RedirectResponse(url="/images?error=Failed to add image", status_code=302)
 
 
-@app.get("/images/edit/{image_name:path}", response_class=HTMLResponse)
-async def edit_image_form(request: Request, image_name: str):
-    _safe_recommend_path(image_name)
-    return _template("edit_image.html", request, image=image_name)
-
-
-@app.post("/images/edit/{image_name:path}")
-async def edit_image(image_name: str, file: UploadFile):
-    try:
-        path = _safe_recommend_path(image_name)
-
-        if not validate_image_file(file):
-            return RedirectResponse(url="/images?error=Please upload a valid image file under 10MB", status_code=302)
-
-        contents = await file.read()
-
-        if len(contents) > MAX_FILE_SIZE:
-            return RedirectResponse(url="/images?error=File size too large. Please upload an image under 10MB", status_code=302)
-
-        if path.exists():
-            with open(path, "wb") as f:
-                f.write(contents)
-            return RedirectResponse(url="/images?message=Image updated successfully. Run index_images.py to update the search index.", status_code=302)
-        else:
-            return RedirectResponse(url="/images?error=Image not found", status_code=302)
-
-    except HTTPException:
-        return RedirectResponse(url="/images?error=Invalid image path", status_code=302)
-    except Exception:
-        logging.error("Edit image error", exc_info=True)
-        return RedirectResponse(url="/images?error=Failed to update image", status_code=302)
+@app.get("/images-json")
+async def images_json():
+    images = []
+    for root, dirs, files in os.walk(RECOMMEND_FOLDER):
+        for file in files:
+            if file.lower().endswith(tuple(ALLOWED_EXTENSIONS)):
+                full_path = Path(root) / file
+                rel_path = full_path.relative_to(RECOMMEND_FOLDER)
+                images.append(str(rel_path))
+    return JSONResponse({
+        "images": images,
+        "index_loaded": index is not None,
+        "images_indexed": len(image_filenames)
+    })
 
 
 @app.post("/images/delete/{image_name:path}")
@@ -432,14 +444,14 @@ async def delete_image(image_name: str):
         path = _safe_recommend_path(image_name)
         if path.exists():
             os.remove(path)
-            return RedirectResponse(url="/images?message=Image deleted successfully. Run index_images.py to update the search index.", status_code=302)
+            return JSONResponse({"status": "success", "message": "Image deleted successfully"})
         else:
-            return RedirectResponse(url="/images?error=Image not found", status_code=302)
+            return JSONResponse({"status": "error", "message": "Image not found"}, status_code=404)
     except HTTPException:
-        return RedirectResponse(url="/images?error=Invalid image path", status_code=302)
-    except Exception:
+        return JSONResponse({"status": "error", "message": "Invalid image path"}, status_code=400)
+    except Exception as e:
         logging.error("Delete image error", exc_info=True)
-        return RedirectResponse(url="/images?error=Failed to delete image", status_code=302)
+        return JSONResponse({"status": "error", "message": "Failed to delete image"}, status_code=500)
 
 
 @app.post("/search-crops")

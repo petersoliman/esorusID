@@ -6,6 +6,174 @@
   <title>Manage Images - Esorus</title>
   <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    .index-status-card {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+      background: var(--color-bg-secondary, #f5f5f5);
+      border-radius: 8px;
+      border: 1px solid var(--color-border, #e0e0e0);
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .status-label {
+      font-size: 0.9rem;
+      color: var(--color-text-secondary, #666);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 500;
+    }
+
+    .status-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--color-text, #333);
+      margin-top: 0.25rem;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--color-bg, white);
+      border: 1px solid var(--color-border, #e0e0e0);
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .status-badge.loaded {
+      color: var(--color-success, #4CAF50);
+      border-color: var(--color-success, #4CAF50);
+    }
+
+    .status-badge.not-loaded {
+      color: var(--color-error, #f44336);
+      border-color: var(--color-error, #f44336);
+    }
+
+    .reindex-button {
+      place-self: center;
+    }
+
+    .upload-zone {
+      margin-bottom: 2rem;
+      padding: 2rem;
+      background: var(--color-bg-secondary, #f5f5f5);
+      border: 2px dashed var(--color-border, #e0e0e0);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .upload-zone.dragover {
+      background: var(--color-bg, white);
+      border-color: var(--color-primary, #007bff);
+      box-shadow: 0 0 10px rgba(0, 123, 255, 0.1);
+    }
+
+    .upload-zone-input {
+      display: none;
+    }
+
+    .upload-text {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--color-text, #333);
+      margin-bottom: 0.5rem;
+    }
+
+    .upload-hint {
+      font-size: 0.9rem;
+      color: var(--color-text-secondary, #666);
+    }
+
+    .upload-progress {
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .upload-progress.show {
+      display: block;
+    }
+
+    .upload-status {
+      font-size: 0.9rem;
+      color: var(--color-text-secondary, #666);
+      margin-top: 0.5rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--color-text-secondary, #666);
+    }
+
+    .empty-state h3 {
+      margin-bottom: 0.5rem;
+    }
+
+    .section-header {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--color-text, #333);
+      margin-bottom: 1rem;
+      margin-top: 2rem;
+    }
+
+    .section-header:first-of-type {
+      margin-top: 0;
+    }
+
+    .inline-message {
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .inline-message.show {
+      display: block;
+    }
+
+    .inline-message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .inline-message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .reindex-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      margin-left: 0.5rem;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
   <!-- Header -->
@@ -28,33 +196,64 @@
     <div class="container">
       <div class="page-header">
         <h1 class="page-title">Manage Recommendation Images</h1>
-        <p class="page-subtitle">View and remove images from your recommendation database.</p>
+        <p class="page-subtitle">Upload, view, and manage your image catalog in one place.</p>
       </div>
 
-      <!-- Messages -->
-      {% if request.query_params.get('message') %}
-      <div class="message success">
-        {{ request.query_params.get('message') }}
+      <!-- Section A: Index Status Bar -->
+      <div class="section-header">Index Status</div>
+      <div class="index-status-card">
+        <div class="status-item">
+          <div>
+            <div class="status-label">Catalog Size</div>
+            <div class="status-value" id="catalogCount">{{ images|length }}</div>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <div class="status-label">Index Status</div>
+            <div class="status-value">
+              <div class="status-badge {% if index_loaded %}loaded{% else %}not-loaded{% endif %}" id="indexBadge">
+                <span id="indexIcon">{% if index_loaded %}✓{% else %}✗{% endif %}</span>
+                <span id="indexText">{% if index_loaded %}Loaded{% else %}Not Loaded{% endif %}</span>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--color-text-secondary, #666); margin-top: 0.5rem;">
+                <span id="indexedCount">{{ images_indexed }}</span> images indexed
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="status-item reindex-button">
+          <button id="reindexBtn" class="btn btn-primary" onclick="reindexNow()">
+            Reindex Now
+            <span class="reindex-spinner" id="reindexSpinner" style="display: none;"></span>
+          </button>
+        </div>
       </div>
-      {% endif %}
-      
-      {% if request.query_params.get('error') %}
-      <div class="message error">
-        {{ request.query_params.get('error') }}
-      </div>
-      {% endif %}
 
-      <!-- Images Grid -->
-      <div class="image-grid">
+      <div class="inline-message" id="reindexMessage"></div>
+
+      <!-- Section B: Bulk Upload Zone -->
+      <div class="section-header">Upload Images</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" class="upload-zone-input" multiple accept="image/*">
+        <div class="upload-text">📷 Drop images here or click to upload</div>
+        <div class="upload-hint">Supports JPG, PNG, GIF, BMP, WebP (10MB max per file)</div>
+        <div class="upload-progress" id="uploadProgress">
+          <div class="spinner"></div>
+          <div class="upload-status" id="uploadStatus">Uploading...</div>
+        </div>
+      </div>
+
+      <!-- Section C: Catalog Grid -->
+      <div class="section-header">Image Catalog</div>
+      <div class="image-grid" id="imageGrid">
         {% for image in images %}
-        <div class="image-card">
+        <div class="image-card" data-image="{{ image }}">
           <img src="{{ url_for('static', path='recommendations/' ~ image) }}" alt="{{ image }}">
           <div class="image-card-content">
             <div class="image-card-title">{{ image }}</div>
             <div class="image-card-actions">
-              <form method="post" action="/images/delete/{{ image }}" onsubmit="return confirm('Are you sure you want to delete this image?')" style="display:inline;">
-                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-              </form>
+              <button type="button" class="btn btn-sm btn-danger" onclick="deleteImage('{{ image }}')">Delete</button>
             </div>
           </div>
         </div>
@@ -62,13 +261,213 @@
       </div>
 
       <!-- Empty State -->
-      {% if not images %}
-      <div class="empty-state">
+      <div class="empty-state" id="emptyState" {% if images %}style="display:none;"{% endif %}>
         <h3>No Images Found</h3>
-        <p>No images found in your recommendation database.</p>
+        <p>Upload images to get started with your recommendation catalog.</p>
       </div>
-      {% endif %}
     </div>
   </main>
+
+  <script>
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const imageGrid = document.getElementById('imageGrid');
+    const emptyState = document.getElementById('emptyState');
+    const reindexBtn = document.getElementById('reindexBtn');
+    const reindexSpinner = document.getElementById('reindexSpinner');
+    const reindexMessage = document.getElementById('reindexMessage');
+
+    // Drag and drop
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      handleFiles(files);
+    });
+
+    uploadZone.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+    });
+
+    async function handleFiles(files) {
+      if (files.length === 0) return;
+
+      uploadProgress.classList.add('show');
+      uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
+      uploadZone.style.opacity = '0.6';
+      uploadZone.style.pointerEvents = 'none';
+
+      const formData = new FormData();
+      for (let file of files) {
+        formData.append('files', file);
+      }
+
+      try {
+        const response = await fetch('/images/bulk-add', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.added.length > 0) {
+          uploadStatus.textContent = `Successfully uploaded ${data.added.length} image(s)`;
+          await refreshImageGrid();
+        }
+
+        if (data.errors.length > 0) {
+          const errorMsg = data.errors.map(e => `${e.filename}: ${e.error}`).join(', ');
+          uploadStatus.textContent = `Uploaded with ${data.errors.length} error(s): ${errorMsg}`;
+        }
+
+        if (data.added.length === 0 && data.errors.length === 0) {
+          uploadStatus.textContent = 'No files uploaded';
+        }
+
+        setTimeout(() => {
+          uploadProgress.classList.remove('show');
+          uploadZone.style.opacity = '1';
+          uploadZone.style.pointerEvents = 'auto';
+          fileInput.value = '';
+        }, 2000);
+
+      } catch (error) {
+        uploadStatus.textContent = `Error uploading files: ${error.message}`;
+        setTimeout(() => {
+          uploadProgress.classList.remove('show');
+          uploadZone.style.opacity = '1';
+          uploadZone.style.pointerEvents = 'auto';
+        }, 2000);
+      }
+    }
+
+    async function refreshImageGrid() {
+      try {
+        const response = await fetch('/images-json');
+        const data = await response.json();
+
+        imageGrid.innerHTML = '';
+
+        if (data.images.length === 0) {
+          emptyState.style.display = 'block';
+          return;
+        }
+
+        emptyState.style.display = 'none';
+
+        for (const image of data.images) {
+          const card = document.createElement('div');
+          card.className = 'image-card';
+          card.setAttribute('data-image', image);
+          card.innerHTML = `
+            <img src="{{ url_for('static', path='recommendations/') }}${image}" alt="${image}">
+            <div class="image-card-content">
+              <div class="image-card-title">${image}</div>
+              <div class="image-card-actions">
+                <button type="button" class="btn btn-sm btn-danger" onclick="deleteImage('${image}')">Delete</button>
+              </div>
+            </div>
+          `;
+          imageGrid.appendChild(card);
+        }
+
+        // Update catalog count
+        document.getElementById('catalogCount').textContent = data.images.length;
+        document.getElementById('indexedCount').textContent = data.images_indexed;
+
+        // Update index status
+        const indexBadge = document.getElementById('indexBadge');
+        const indexIcon = document.getElementById('indexIcon');
+        const indexText = document.getElementById('indexText');
+        if (data.index_loaded) {
+          indexBadge.className = 'status-badge loaded';
+          indexIcon.textContent = '✓';
+          indexText.textContent = 'Loaded';
+        } else {
+          indexBadge.className = 'status-badge not-loaded';
+          indexIcon.textContent = '✗';
+          indexText.textContent = 'Not Loaded';
+        }
+
+      } catch (error) {
+        console.error('Error refreshing image grid:', error);
+      }
+    }
+
+    async function deleteImage(imageName) {
+      if (!confirm(`Are you sure you want to delete "${imageName}"?`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/images/delete/${encodeURIComponent(imageName)}`, {
+          method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          const card = imageGrid.querySelector(`[data-image="${imageName}"]`);
+          if (card) {
+            card.remove();
+          }
+
+          // Update catalog count
+          const currentCount = parseInt(document.getElementById('catalogCount').textContent);
+          document.getElementById('catalogCount').textContent = currentCount - 1;
+
+          if (currentCount - 1 === 0) {
+            emptyState.style.display = 'block';
+          }
+        } else {
+          alert(`Error: ${data.message}`);
+        }
+      } catch (error) {
+        alert(`Error deleting image: ${error.message}`);
+      }
+    }
+
+    async function reindexNow() {
+      reindexBtn.disabled = true;
+      reindexSpinner.style.display = 'inline-block';
+      reindexMessage.classList.remove('show', 'success', 'error');
+
+      try {
+        const response = await fetch('/reindex');
+        const data = await response.json();
+
+        reindexMessage.classList.add('show');
+        if (data.status === 'success') {
+          reindexMessage.classList.add('success');
+          reindexMessage.textContent = data.message;
+          await refreshImageGrid();
+        } else {
+          reindexMessage.classList.add('error');
+          reindexMessage.textContent = `Error: ${data.message}`;
+        }
+      } catch (error) {
+        reindexMessage.classList.add('show', 'error');
+        reindexMessage.textContent = `Error: ${error.message}`;
+      } finally {
+        reindexBtn.disabled = false;
+        reindexSpinner.style.display = 'none';
+      }
+    }
+  </script>
 </body>
 </html>
