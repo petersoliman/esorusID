@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from typing import List
 import os
+import io
 import uuid
 import logging
 import json
@@ -47,6 +48,10 @@ MAX_RESULTS_PER_OBJECT = 5
 
 # API key for the /reindex endpoint — set REINDEX_API_KEY env var to enable auth
 REINDEX_API_KEY = os.environ.get("REINDEX_API_KEY")
+
+# API key for /api/search — set API_KEY env var to require X-API-Key header.
+# If unset, /api/search is open (for dev).
+API_KEY = os.environ.get("API_KEY")
 
 
 @asynccontextmanager
@@ -172,37 +177,100 @@ def _faiss_search(feat, k: int) -> tuple:
     return index.search(np.expand_dims(feat, axis=0), k=k)
 
 
-def _single_image_search(img, uploaded_name: str, request: Request):
-    """Fall-back: treat the whole uploaded image as one query."""
+def _product_id_from_filename(filename):
+    """Extract int product_id from '{id}_{variant}.ext' filenames; None otherwise."""
+    try:
+        return int(str(filename).split('_', 1)[0])
+    except (ValueError, AttributeError):
+        return None
+
+
+def _make_matches(D_row, I_row, threshold, limit):
+    """Build the JSON-shape `matches` list from a FAISS search row.
+
+    threshold=None means no similarity filtering (used for the whole-image fallback,
+    which matches the pre-refactor behaviour of _single_image_search).
+    """
+    matches = []
+    for j in range(len(I_row)):
+        idx = int(I_row[j])
+        if idx < 0 or idx >= len(image_filenames):
+            continue
+        score = float(D_row[j])
+        if threshold is not None and score < threshold:
+            continue
+        fname = image_filenames[idx]
+        matches.append({
+            "product_id": _product_id_from_filename(fname),
+            "similarity_score": round(score, 4),
+            "image_filename": fname,
+        })
+        if len(matches) >= limit:
+            break
+    return matches
+
+
+def _run_search_pipeline(img):
+    """Shared YOLO → embed → FAISS → filter pipeline used by both /search and /api/search.
+
+    Callers must pre-check ML_AVAILABLE and that the index is loaded.
+
+    Returns a list of detection groups with keys:
+        label (str), confidence (float), matches (list of JSON-shape dicts),
+        bbox (list[int] or None), crop (PIL.Image or None).
+
+    `bbox`/`crop` are populated for YOLO detections and are None for the
+    whole-image fallback group. Returns [] only if feature extraction fails
+    on the whole-image fallback.
+    """
+    raw_detections = []
+    if DETECTION_AVAILABLE:
+        try:
+            raw_detections = detect_products(img, conf_threshold=YOLO_CONF_THRESHOLD)
+        except Exception:
+            logging.error("Object detection failed, falling back to single-image search", exc_info=True)
+            raw_detections = []
+
+    groups = []
+    for i, det in enumerate(raw_detections):
+        try:
+            feat = extract_features(det['crop'])
+        except Exception:
+            logging.warning(f"Could not embed crop {i} ({det['label']}), skipping", exc_info=True)
+            continue
+
+        D, I = _faiss_search(feat, k=10)
+        matches = _make_matches(D[0], I[0], SIMILARITY_THRESHOLD, MAX_RESULTS_PER_OBJECT)
+        if not matches:
+            continue
+
+        groups.append({
+            "label": det['label'],
+            "confidence": float(det['confidence']),
+            "matches": matches,
+            "bbox": list(det['bbox']),
+            "crop": det['crop'],
+        })
+
+    if groups:
+        return groups
+
+    # No YOLO detections (or all filtered) — fall back to whole-image search.
     try:
         feat = extract_features(img)
     except Exception:
-        logging.error("Feature extraction error", exc_info=True)
-        return _template("index.html", request,
-                         error="Error processing image. Please try again.")
-
-    if index is None or len(image_filenames) == 0:
-        return _template("results.html", request,
-                         uploaded=uploaded_name, annotated=uploaded_name,
-                         detections=[], multi_mode=False,
-                         message="No search index available. Please run index_images.py first.")
+        logging.error("Feature extraction error on whole image", exc_info=True)
+        return []
 
     D, I = _faiss_search(feat, k=MAX_RESULTS_PER_OBJECT)
-    results = [image_filenames[i] for i in I[0] if i < len(image_filenames)]
-
-    # Wrap as a single detection group so results.html can use the same template path
-    detection_group = {
-        'id': 1,
-        'label': 'image',
-        'confidence': 1.0,
-        'crop_filename': uploaded_name,
-        'results': results,
-        'bbox': None,
-        'color': DETECTION_COLORS[0] if DETECTION_AVAILABLE else '#4ECDC4',
-    }
-    return _template("results.html", request,
-                     uploaded=uploaded_name, annotated=uploaded_name,
-                     detections=[detection_group], multi_mode=False)
+    matches = _make_matches(D[0], I[0], threshold=None, limit=MAX_RESULTS_PER_OBJECT)
+    return [{
+        "label": "image",
+        "confidence": 1.0,
+        "matches": matches,
+        "bbox": None,
+        "crop": None,
+    }]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -222,7 +290,74 @@ async def health_check():
         "indexing_available": INDEXING_AVAILABLE,
         "index_loaded": index is not None,
         "images_count": len(image_filenames) if image_filenames else 0,
+        "api_search_available": True,
     }
+
+
+@app.post("/api/search")
+async def api_search(request: Request, file: UploadFile = File(...)):
+    """Machine-readable search endpoint for marketplace integration."""
+    if API_KEY:
+        provided = request.headers.get("X-API-Key")
+        if provided != API_KEY:
+            return JSONResponse(
+                {"status": "error", "message": "Unauthorized"},
+                status_code=401,
+            )
+
+    try:
+        if not validate_image_file(file):
+            return JSONResponse(
+                {"status": "error", "message": "Invalid image file"},
+                status_code=400,
+            )
+
+        contents = await file.read()
+        if len(contents) > MAX_FILE_SIZE:
+            return JSONResponse(
+                {"status": "error", "message": "Invalid image file"},
+                status_code=400,
+            )
+
+        if not ML_AVAILABLE:
+            return JSONResponse(
+                {"status": "error", "message": "ML not available"},
+                status_code=503,
+            )
+
+        if index is None or len(image_filenames) == 0:
+            return JSONResponse(
+                {"status": "error", "message": "No search index available"},
+                status_code=503,
+            )
+
+        try:
+            img = Image.open(io.BytesIO(contents)).convert("RGB")
+        except Exception:
+            return JSONResponse(
+                {"status": "error", "message": "Invalid image file"},
+                status_code=400,
+            )
+
+        groups = _run_search_pipeline(img)
+
+        detections = [
+            {
+                "label": g["label"],
+                "confidence": round(float(g["confidence"]), 4),
+                "matches": g["matches"],
+            }
+            for g in groups
+        ]
+
+        return JSONResponse({"status": "ok", "detections": detections})
+
+    except Exception:
+        logging.error("api_search error", exc_info=True)
+        return JSONResponse(
+            {"status": "error", "message": "Server error"},
+            status_code=500,
+        )
 
 
 @app.post("/search", response_class=HTMLResponse)
@@ -263,79 +398,59 @@ async def search(request: Request, file: UploadFile):
                              detections=[], multi_mode=False,
                              message="No search index available. Please run index_images.py first.")
 
-        # ── Multi-product detection path ─────────────────────────────────────
-        if DETECTION_AVAILABLE:
-            try:
-                raw_detections = detect_products(img, conf_threshold=YOLO_CONF_THRESHOLD)
-            except Exception:
-                logging.error("Object detection failed, falling back to single-image search", exc_info=True)
-                raw_detections = []
-        else:
-            raw_detections = []
+        groups = _run_search_pipeline(img)
 
-        if not raw_detections:
-            # Fall back to whole-image search
-            return _single_image_search(img, name, request)
+        if not groups:
+            return _template("index.html", request,
+                             error="Error processing image. Please try again.")
 
-        # ── Process each detected object ─────────────────────────────────────
+        multi_mode = groups[0]["bbox"] is not None
+
         result_groups = []
-        group_id = 1
+        for i, g in enumerate(groups):
+            gid = i + 1
 
-        for i, det in enumerate(raw_detections):
-            try:
-                feat = extract_features(det['crop'])
-            except Exception:
-                logging.warning(f"Could not embed crop {i} ({det['label']}), skipping", exc_info=True)
-                continue
+            if g["crop"] is not None:
+                crop_name = f"crop_{uuid.uuid4()}_{i}.jpg"
+                try:
+                    g["crop"].convert("RGB").save(UPLOAD_FOLDER / crop_name, "JPEG")
+                except Exception:
+                    logging.warning(f"Failed to save crop {i}", exc_info=True)
+                    crop_name = name
+            else:
+                crop_name = name
 
-            D, I = _faiss_search(feat, k=10)
-
-            good_results = [
-                image_filenames[I[0][j]]
-                for j in range(len(I[0]))
-                if I[0][j] < len(image_filenames) and D[0][j] >= SIMILARITY_THRESHOLD
-            ][:MAX_RESULTS_PER_OBJECT]
-
-            if not good_results:
-                continue  # no sufficiently similar products — skip this detection
-
-            # Save crop thumbnail
-            crop_name = f"crop_{uuid.uuid4()}_{i}.jpg"
-            try:
-                det['crop'].convert("RGB").save(UPLOAD_FOLDER / crop_name, "JPEG")
-            except Exception:
-                logging.warning(f"Failed to save crop {i}", exc_info=True)
-                crop_name = name  # fall back to original image
+            color = (
+                DETECTION_COLORS[(gid - 1) % len(DETECTION_COLORS)]
+                if DETECTION_AVAILABLE and DETECTION_COLORS
+                else '#4ECDC4'
+            )
 
             result_groups.append({
-                'id': group_id,
-                'label': det['label'],
-                'confidence': det['confidence'],
+                'id': gid,
+                'label': g['label'],
+                'confidence': g['confidence'],
                 'crop_filename': crop_name,
-                'results': good_results,
-                'bbox': list(det['bbox']),
-                'color': DETECTION_COLORS[(group_id - 1) % len(DETECTION_COLORS)],
+                'results': [m['image_filename'] for m in g['matches']],
+                'bbox': g['bbox'],
+                'color': color,
             })
-            group_id += 1
 
-        if not result_groups:
-            # All detections were filtered out — fall back to whole-image search
-            return _single_image_search(img, name, request)
-
-        # Draw bounding boxes only for matched detections
-        try:
-            annotated_img = draw_annotations(img, result_groups)
-            annotated_name = f"annotated_{uuid.uuid4()}.jpg"
-            annotated_img.convert("RGB").save(UPLOAD_FOLDER / annotated_name, "JPEG")
-        except Exception:
-            logging.warning("Failed to draw annotations", exc_info=True)
-            annotated_name = name  # fall back to original
+        annotated_name = name
+        if multi_mode:
+            try:
+                annotated_img = draw_annotations(img, result_groups)
+                annotated_name = f"annotated_{uuid.uuid4()}.jpg"
+                annotated_img.convert("RGB").save(UPLOAD_FOLDER / annotated_name, "JPEG")
+            except Exception:
+                logging.warning("Failed to draw annotations", exc_info=True)
+                annotated_name = name
 
         return _template("results.html", request,
                          uploaded=name,
                          annotated=annotated_name,
                          detections=result_groups,
-                         multi_mode=True)
+                         multi_mode=multi_mode)
 
     except Exception:
         logging.error("Search error", exc_info=True)
