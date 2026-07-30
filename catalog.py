@@ -26,7 +26,16 @@ CATALOG_API_URL = os.environ.get("CATALOG_API_URL", "").rstrip("/")
 CATALOG_API_KEY = os.environ.get("CATALOG_API_KEY", "")
 CATALOG_MARKETPLACE = os.environ.get("CATALOG_MARKETPLACE", "esorus")
 CATALOG_API_TIMEOUT = float(os.environ.get("CATALOG_API_TIMEOUT", "3"))
+# The manifest is a bulk call — 66k images is 34 pages of 2000 — so it needs far
+# longer than the per-search resolve timeout, which is deliberately short so a
+# slow catalog never stalls a user's search.
+CATALOG_MANIFEST_TIMEOUT = float(os.environ.get("CATALOG_MANIFEST_TIMEOUT", "120"))
 CATALOG_CACHE_TTL = float(os.environ.get("CATALOG_CACHE_TTL", "3600"))
+
+# Identify ourselves. urllib's default ("Python-urllib/3.x") is blocked outright
+# by Cloudflare's bot rules — every catalog call came back 403 in production
+# while the same URL served fine from curl.
+USER_AGENT = os.environ.get("CATALOG_USER_AGENT", "esorusID/1.0 (+catalog-client)")
 
 # Matches MAX_GPIDS in CatalogResolveController.
 MAX_GPIDS_PER_REQUEST = 500
@@ -36,18 +45,18 @@ MAX_GPIDS_PER_REQUEST = 500
 _cache: Dict[str, Tuple[Optional[dict], float]] = {}
 
 
-def _request(path: str, params: dict) -> Optional[dict]:
+def _request(path: str, params: dict, timeout: float = None) -> Optional[dict]:
     """GET a catalog endpoint. Returns the decoded `data` block, or None."""
     if not CATALOG_API_URL:
         return None
 
     url = f"{CATALOG_API_URL}{path}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url)
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     if CATALOG_API_KEY:
         req.add_header("X-API-Key", CATALOG_API_KEY)
 
     try:
-        with urllib.request.urlopen(req, timeout=CATALOG_API_TIMEOUT) as response:
+        with urllib.request.urlopen(req, timeout=timeout or CATALOG_API_TIMEOUT) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as e:
         logging.warning(f"Catalog request failed ({path}): {e}")
@@ -111,7 +120,10 @@ def image_manifest(limit: int = 2000) -> List[dict]:
         data = _request(
             "/api/catalog/images",
             {"marketplace": CATALOG_MARKETPLACE, "limit": limit, "offset": offset},
+            timeout=CATALOG_MANIFEST_TIMEOUT,
         )
+        if data is not None and offset == 0:
+            print(f"Fetching manifest from {CATALOG_API_URL} ...")
         if not data:
             break
         page = data.get("images") or []

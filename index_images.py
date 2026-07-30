@@ -110,7 +110,12 @@ def _open_image(entry):
     suffix = Path(rel).suffix or ".jpg"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp.close()
-    urllib.request.urlretrieve(entry["url"], tmp.name)
+    # Same reason as in catalog.py: urllib's default User-Agent is 403'd by
+    # Cloudflare, so image downloads must identify themselves too.
+    from catalog import USER_AGENT
+    req = urllib.request.Request(entry["url"], headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=30) as resp, open(tmp.name, "wb") as out:
+        out.write(resp.read())
     return Image.open(tmp.name).convert("RGB"), tmp.name
 
 
