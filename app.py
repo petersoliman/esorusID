@@ -11,6 +11,8 @@ import logging
 import json
 from contextlib import asynccontextmanager
 
+from catalog import resolve as resolve_gpids
+
 # Try to import ML dependencies, but don't fail if they're not available
 try:
     import faiss
@@ -181,12 +183,17 @@ def _faiss_search(feat, k: int) -> tuple:
     return index.search(np.expand_dims(feat, axis=0), k=k)
 
 
-def _product_id_from_filename(filename):
-    """Extract int product_id from '{id}_{variant}.ext' filenames; None otherwise."""
-    try:
-        return int(str(filename).split('_', 1)[0])
-    except (ValueError, AttributeError):
-        return None
+def _entry(idx):
+    """Index entry at `idx` as a (filename, gpid) pair.
+
+    The mapping stores {"file", "gpid"} objects written by index_images.py.
+    Pre-GPID indexes stored bare filename strings; those yield gpid=None rather
+    than having an id parsed out of the name.
+    """
+    raw = image_filenames[idx]
+    if isinstance(raw, dict):
+        return raw.get("file"), raw.get("gpid")
+    return raw, None
 
 
 def _make_matches(D_row, I_row, threshold, limit):
@@ -203,15 +210,45 @@ def _make_matches(D_row, I_row, threshold, limit):
         score = float(D_row[j])
         if threshold is not None and score < threshold:
             continue
-        fname = image_filenames[idx]
+        fname, gpid = _entry(idx)
         matches.append({
-            "product_id": _product_id_from_filename(fname),
+            "gpid": gpid,
             "similarity_score": round(score, 4),
             "image_filename": fname,
         })
         if len(matches) >= limit:
             break
     return matches
+
+
+def _result_cards(matches):
+    """Shape matches for the results page and the /search-crops JSON."""
+    return [
+        {
+            "filename": m["image_filename"],
+            "gpid": m.get("gpid"),
+            "supplier": (m.get("catalog") or {}).get("supplier"),
+            "name": (m.get("catalog") or {}).get("name"),
+            "product_id": (m.get("catalog") or {}).get("product_id"),
+            "url": (m.get("catalog") or {}).get("url"),
+        }
+        for m in matches
+    ]
+
+
+def _attach_catalog(groups):
+    """Add catalog detail to every match, resolved by GPID.
+
+    Mutates `groups` in place, adding a `catalog` key per match (None when the
+    GPID is unknown or the catalog is unreachable). One batched lookup for the
+    whole result set.
+    """
+    gpids = [m["gpid"] for g in groups for m in g["matches"] if m.get("gpid")]
+    detail = resolve_gpids(gpids)
+    for g in groups:
+        for m in g["matches"]:
+            m["catalog"] = detail.get(m.get("gpid"))
+    return groups
 
 
 def _run_search_pipeline(img):
@@ -257,7 +294,7 @@ def _run_search_pipeline(img):
         })
 
     if groups:
-        return groups
+        return _attach_catalog(groups)
 
     # No YOLO detections (or all filtered) — fall back to whole-image search.
     try:
@@ -268,13 +305,13 @@ def _run_search_pipeline(img):
 
     D, I = _faiss_search(feat, k=MAX_RESULTS_PER_OBJECT)
     matches = _make_matches(D[0], I[0], threshold=None, limit=MAX_RESULTS_PER_OBJECT)
-    return [{
+    return _attach_catalog([{
         "label": "image",
         "confidence": 1.0,
         "matches": matches,
         "bbox": None,
         "crop": None,
-    }]
+    }])
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -435,7 +472,7 @@ async def search(request: Request, file: UploadFile):
                 'label': g['label'],
                 'confidence': g['confidence'],
                 'crop_filename': crop_name,
-                'results': [m['image_filename'] for m in g['matches']],
+                'results': _result_cards(g['matches']),
                 'bbox': g['bbox'],
                 'color': color,
             })
@@ -637,13 +674,9 @@ async def search_crops(request: Request):
                 continue
 
             D, I = _faiss_search(feat, k=10)
-            good_results = [
-                image_filenames[I[0][j]]
-                for j in range(len(I[0]))
-                if I[0][j] < len(image_filenames) and D[0][j] >= SIMILARITY_THRESHOLD
-            ][:MAX_RESULTS_PER_OBJECT]
+            matches = _make_matches(D[0], I[0], SIMILARITY_THRESHOLD, MAX_RESULTS_PER_OBJECT)
 
-            if not good_results:
+            if not matches:
                 continue
 
             # Save crop thumbnail
@@ -658,10 +691,14 @@ async def search_crops(request: Request):
                 'id': i + 1,
                 'label': crop_data.get('label', f'Selection {i + 1}'),
                 'crop_filename': crop_name,
-                'results': good_results,
+                'matches': matches,
                 'color': MANUAL_COLORS[i % len(MANUAL_COLORS)],
                 'bbox': [x1, y1, x2, y2],
             })
+
+        _attach_catalog(groups)
+        for g in groups:
+            g['results'] = _result_cards(g.pop('matches'))
 
         return JSONResponse({'groups': groups})
 

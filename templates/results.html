@@ -93,13 +93,29 @@
     }
     .detection-result-info { padding: 0.4rem 0.5rem; }
     .detection-result-rank { font-size: 0.7rem; color: var(--primary-color); font-weight: 600; }
-    .detection-result-name {
-      font-size: 0.7rem;
-      color: var(--text-secondary);
+    .detection-result-supplier {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-primary);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .detection-result-supplier.is-unknown { font-weight: 400; color: var(--text-secondary); }
+    .detection-result-name {
+      font-size: 0.7rem;
+      color: var(--text-primary);
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* Clicking the label opens the product on the storefront, resolved by GPID. */
+    .detection-result-link { text-decoration: none; display: block; }
+    .detection-result-link:hover .detection-result-supplier,
+    .detection-result-link:hover .detection-result-name { color: var(--primary-color); }
+    .detection-result-link .detection-result-supplier { font-weight: 500; color: var(--text-secondary); }
+    .detection-result-link .ext { opacity: 0.6; font-size: 0.65rem; }
 
     /* ── Annotated image (clickable, no canvas) ── */
     .annotated-section { text-align: center; margin-bottom: 1.5rem; }
@@ -373,14 +389,25 @@
           <div class="detection-results">
             <div class="detection-results-label">{{ det.results|length }} similar product{{ 's' if det.results|length != 1 else '' }} found</div>
             <div class="detection-results-grid">
-              {% for img_name in det.results %}
+              {% for r in det.results %}
+              {% set supplier = r.supplier or 'Unknown supplier' %}
               <div class="detection-result-card">
-                <img src="{{ url_for('static', path='recommendations/' ~ img_name) }}"
-                     alt="{{ img_name }}"
-                     onclick="openProductModal(this.src, '{{ img_name }}')">
+                <img src="{{ url_for('static', path='recommendations/' ~ r.filename) }}"
+                     alt="{{ r.name or supplier }}"
+                     onclick='openProductModal(this.src, {{ (r.name or supplier)|tojson }})'>
                 <div class="detection-result-info">
                   <div class="detection-result-rank">#{{ loop.index }}</div>
-                  <div class="detection-result-name">{{ img_name }}</div>
+                  {% if r.url %}
+                    <a class="detection-result-link" href="{{ r.url }}" target="_blank" rel="noopener"
+                       title="Open {{ r.name or supplier }} on the store">
+                      {% if r.name %}<div class="detection-result-name">{{ r.name }}</div>{% endif %}
+                      <div class="detection-result-supplier">{{ supplier }} <span class="ext">&#8599;</span></div>
+                    </a>
+                  {% else %}
+                    {% if r.name %}<div class="detection-result-name">{{ r.name }}</div>{% endif %}
+                    <div class="detection-result-supplier{{ ' is-unknown' if not r.supplier }}"
+                         title="{{ supplier }}">{{ supplier }}</div>
+                  {% endif %}
                 </div>
               </div>
               {% endfor %}
@@ -437,6 +464,12 @@
     const MANUAL_COLORS  = ['#E67E22','#8E44AD','#16A085','#C0392B','#2980B9','#27AE60','#D35400','#7D3C98'];
     const UPLOADED_IMAGE = '{{ uploaded }}';
     const ANNOTATED_SRC  = '{{ url_for("static", path="uploads/" ~ (annotated if annotated else uploaded)) }}';
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
 
     /* ══════════════════════════════════════════════
        Product image fullscreen modal
@@ -704,15 +737,24 @@
             <div class="detection-results">
               <div class="detection-results-label">${n} similar product${n !== 1 ? 's' : ''} found</div>
               <div class="detection-results-grid">
-                ${g.results.map((name, idx) => `
+                ${g.results.map((r, idx) => {
+                  const supplier = r.supplier || 'Unknown supplier';
+                  return `
                 <div class="detection-result-card">
-                  <img src="/static/recommendations/${name}" alt="${name}"
-                       onclick="openProductModal(this.src,'${name}')">
+                  <img src="/static/recommendations/${r.filename}" alt="${escapeHtml(r.name || supplier)}"
+                       onclick="openProductModal(this.src, this.alt)">
                   <div class="detection-result-info">
                     <div class="detection-result-rank">#${idx + 1}</div>
-                    <div class="detection-result-name">${name}</div>
+                    ${r.url
+                      ? `<a class="detection-result-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener">
+                           ${r.name ? `<div class="detection-result-name">${escapeHtml(r.name)}</div>` : ''}
+                           <div class="detection-result-supplier">${escapeHtml(supplier)} <span class="ext">&#8599;</span></div>
+                         </a>`
+                      : `${r.name ? `<div class="detection-result-name">${escapeHtml(r.name)}</div>` : ''}
+                         <div class="detection-result-supplier${r.supplier ? '' : ' is-unknown'}">${escapeHtml(supplier)}</div>`}
                   </div>
-                </div>`).join('')}
+                </div>`;
+                }).join('')}
               </div>
             </div>
           </div>
