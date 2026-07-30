@@ -184,16 +184,21 @@ def _faiss_search(feat, k: int) -> tuple:
 
 
 def _entry(idx):
-    """Index entry at `idx` as a (filename, gpid) pair.
+    """Index entry at `idx` as a (image_url, gpid) pair.
 
-    The mapping stores {"file", "gpid"} objects written by index_images.py.
-    Pre-GPID indexes stored bare filename strings; those yield gpid=None rather
-    than having an id parsed out of the name.
+    Entries are {"gpid", "path", "url"} written by index_images.py — the image
+    is served from the catalog, not from this service, so nothing is duplicated
+    here. Older mappings that carried a local filename still render, via
+    /static/recommendations/.
     """
     raw = image_filenames[idx]
-    if isinstance(raw, dict):
-        return raw.get("file"), raw.get("gpid")
-    return raw, None
+    if not isinstance(raw, dict):
+        return f"/static/recommendations/{raw}", None
+    if raw.get("url"):
+        return raw["url"], raw.get("gpid")
+    if raw.get("file"):
+        return f"/static/recommendations/{raw['file']}", raw.get("gpid")
+    return None, raw.get("gpid")
 
 
 def _make_matches(D_row, I_row, threshold, limit):
@@ -210,11 +215,11 @@ def _make_matches(D_row, I_row, threshold, limit):
         score = float(D_row[j])
         if threshold is not None and score < threshold:
             continue
-        fname, gpid = _entry(idx)
+        image_url, gpid = _entry(idx)
         matches.append({
             "gpid": gpid,
             "similarity_score": round(score, 4),
-            "image_filename": fname,
+            "image_url": image_url,
         })
         if len(matches) >= limit:
             break
@@ -225,7 +230,7 @@ def _result_cards(matches):
     """Shape matches for the results page and the /search-crops JSON."""
     return [
         {
-            "filename": m["image_filename"],
+            "image_url": m["image_url"],
             "gpid": m.get("gpid"),
             "supplier": (m.get("catalog") or {}).get("supplier"),
             "name": (m.get("catalog") or {}).get("name"),

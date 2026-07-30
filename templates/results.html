@@ -392,7 +392,7 @@
               {% for r in det.results %}
               {% set supplier = r.supplier or 'Unknown supplier' %}
               <div class="detection-result-card">
-                <img src="{{ url_for('static', path='recommendations/' ~ r.filename) }}"
+                <img src="{{ r.image_url }}"
                      alt="{{ r.name or supplier }}"
                      onclick='openProductModal(this.src, {{ (r.name or supplier)|tojson }})'>
                 <div class="detection-result-info">
@@ -741,7 +741,7 @@
                   const supplier = r.supplier || 'Unknown supplier';
                   return `
                 <div class="detection-result-card">
-                  <img src="/static/recommendations/${r.filename}" alt="${escapeHtml(r.name || supplier)}"
+                  <img src="${escapeHtml(r.image_url)}" alt="${escapeHtml(r.name || supplier)}"
                        onclick="openProductModal(this.src, this.alt)">
                   <div class="detection-result-info">
                     <div class="detection-result-rank">#${idx + 1}</div>
