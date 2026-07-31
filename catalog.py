@@ -22,6 +22,13 @@ import urllib.parse
 import urllib.request
 from typing import Dict, List, Optional, Tuple
 
+from env_file import load_env
+
+# Before any os.environ read below: a restart that loses these turns every
+# lookup into a silent no-op, which is how production ended up serving results
+# with no supplier name.
+load_env()
+
 CATALOG_API_URL = os.environ.get("CATALOG_API_URL", "").rstrip("/")
 CATALOG_API_KEY = os.environ.get("CATALOG_API_KEY", "")
 CATALOG_MARKETPLACE = os.environ.get("CATALOG_MARKETPLACE", "esorus")

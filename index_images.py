@@ -32,7 +32,12 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+from env_file import load_env
 from utils import get_image_embedding
+
+# CATALOG_PUBLIC_DIR below decides whether images are read off disk or pulled
+# over HTTP, so it has to be resolved before the module constants are set.
+load_env()
 
 # Use Railway persistent storage if available, otherwise use local paths
 if os.path.exists('/app/data'):

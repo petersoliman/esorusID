@@ -11,6 +11,7 @@ import logging
 import json
 from contextlib import asynccontextmanager
 
+from env_file import load_env
 from catalog import resolve as resolve_gpids
 
 # Try to import ML dependencies, but don't fail if they're not available
@@ -39,6 +40,10 @@ except ImportError as e:
     DETECTION_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
+
+# Read .env before any os.environ lookup below. Under gunicorn nobody exports
+# these, so without it the app starts with no catalog and no API keys.
+load_env()
 
 # Configuration
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
